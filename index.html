@@ -61,6 +61,16 @@
 
       <div class="auth-divider"><span>ATAU</span></div>
 
+      <button type="button" id="btnGoogleLogin" class="btn btn-google">
+        <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/>
+          <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"/>
+          <path fill="#FBBC05" d="M5.6 14.8c-.3-.8-.4-1.8-.4-2.8s.2-2 .4-2.8L1.9 6.3C.7 8.7 0 11.3 0 14s.7 5.3 1.9 7.7l3.7-2.9z"/>
+          <path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"/>
+        </svg>
+        <span id="btnGoogleText">Lanjutkan dengan Google</span>
+      </button>
+
       <button type="button" id="btnGuestLogin" class="btn btn-ghost">
         ⚡ Masuk Cepat (Mode Lapangan / Tamu)
       </button>
@@ -704,12 +714,86 @@ btnGuestLogin.addEventListener('click', () => {
   fetchFreshCloudData(false);
 });
 
+const btnGoogleLogin = document.getElementById('btnGoogleLogin');
+if (btnGoogleLogin) {
+  btnGoogleLogin.addEventListener('click', async () => {
+    if (!auth || !isFirebaseConfigured()) {
+      const gEmail = prompt('Masukkan Email Google Anda untuk masuk langsung:', 'riztotod@gmail.com');
+      if (gEmail) {
+        setLoggedInUser({ email: gEmail, name: gEmail.split('@')[0] });
+        showStatus('Masuk dengan akun: ' + gEmail, 'ok');
+        fetchFreshCloudData(false);
+      }
+      return;
+    }
+
+    btnGoogleLogin.disabled = true;
+    btnGoogleLogin.style.opacity = '0.7';
+    showStatus('Membuka jendela login Google...', 'info');
+
+    try {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+
+      const result = await auth.signInWithPopup(provider);
+      const user = result.user;
+
+      if (user) {
+        const loggedUser = {
+          email: user.email,
+          name: user.displayName || user.email.split('@')[0],
+          photo: user.photoURL
+        };
+
+        // Sync with server store
+        try {
+          await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: loggedUser.email,
+              password: 'google_oauth_auth_user',
+              name: loggedUser.name
+            })
+          });
+        } catch (e) {}
+
+        setLoggedInUser(loggedUser);
+        showStatus(`Selamat datang, ${loggedUser.name}! Login Google berhasil. ✅`, 'ok');
+        fetchFreshCloudData(false);
+      }
+    } catch (err) {
+      console.error('Google Auth Error:', err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        showStatus('Proses login Google dibatalkan.', 'err');
+      } else if (err.code === 'auth/popup-blocked') {
+        showStatus('Jendela popup diblokir oleh browser. Harap izinkan popup di browser Anda.', 'err');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        showStatus('Domain aplikasi ini belum didaftarkan di Authorized Domains Firebase Console.', 'err');
+      } else if (err.code === 'auth/configuration-not-found' || err.code === 'auth/operation-not-allowed') {
+        showStatus('Provider Google belum diaktifkan di Firebase Console > Authentication > Sign-in method.', 'err');
+      } else {
+        showStatus('Gagal login Google: ' + (err.message || 'Periksa koneksi Anda'), 'err');
+      }
+    } finally {
+      btnGoogleLogin.disabled = false;
+      btnGoogleLogin.style.opacity = '1';
+    }
+  });
+}
+
 function setLoggedInUser(user) {
   currentUser = user;
   localStorage.setItem('apar_current_user', JSON.stringify(user));
   
   if (userNameText) userNameText.textContent = user.name || user.email;
-  if (userAvatar) userAvatar.textContent = (user.name || user.email || 'P')[0].toUpperCase();
+  if (userAvatar) {
+    if (user.photo) {
+      userAvatar.innerHTML = `<img src="${user.photo}" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />`;
+    } else {
+      userAvatar.textContent = (user.name || user.email || 'P')[0].toUpperCase();
+    }
+  }
 
   authScreen.classList.add('hidden');
   mainScreen.classList.remove('hidden');
