@@ -1,0 +1,14 @@
+{
+  "110": {
+    "kode": "110",
+    "gedung": "GEDUNG UTAMA",
+    "ruangan": "Lobby Utama",
+    "kebersihanTabung": "Bersih",
+    "indikatorTekanan": "Hijau (Normal)",
+    "kunciPengaman": "Ada & Tersegel",
+    "selangSemprot": "Bagus / Tidak Retak",
+    "nozzle": "Lengkap & Bersih",
+    "tagLabel": "Ada & Terisi",
+    "pemeriksa": "Petugas Tes"
+  }
+}

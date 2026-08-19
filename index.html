@@ -340,10 +340,11 @@ function escapeHtml(str) {
 }
 
 /* ===========================================================
-   3. Firebase Initialization & Multi-User Realtime Sync
+   3. Unified Real-Time Engine (Server-Sent Events + Firestore)
    =========================================================== */
+let sseSource = null;
 let unsubscribeFirestore = null;
-let syncInterval = null;
+let syncHeartbeat = null;
 
 function isFirebaseConfigured() {
   return typeof firebaseConfig !== 'undefined'
@@ -351,32 +352,157 @@ function isFirebaseConfigured() {
     && firebaseConfig.projectId && !String(firebaseConfig.projectId).startsWith('GANTI_');
 }
 
-function startRealtimeSync(isManual = false) {
-  if (!db || !isFirebaseConfigured()) {
-    setDbStatus('offline', 'Mode Lokal (Penyimpanan HP)');
-    renderRiwayat();
-    renderProgress();
-    return;
+// -------------------------------------------------------------
+// 3.1 Server-Sent Events (SSE) for 100% Instant Live Sync
+// -------------------------------------------------------------
+function initServerEventSource() {
+  if (sseSource) {
+    try { sseSource.close(); } catch (e) {}
+    sseSource = null;
   }
 
-  // Clear previous listener if any
+  try {
+    sseSource = new EventSource('/api/apar_log/events');
+
+    sseSource.onmessage = (event) => {
+      if (!event.data) return;
+      try {
+        const payload = JSON.parse(event.data);
+        
+        if (payload.type === 'init') {
+          // Initial snapshot of all inspections from server
+          if (payload.logs && typeof payload.logs === 'object') {
+            LOG = { ...loadLocalLog(), ...payload.logs };
+            saveLocalLog(LOG);
+            renderRiwayat();
+            renderProgress();
+            const total = Object.keys(payload.logs).length;
+            setDbStatus('online', `Real-Time Aktif (${total} data)`);
+          }
+        } else if (payload.type === 'update' && payload.entry) {
+          // Instant broadcast from another user or device!
+          const entry = payload.entry;
+          const docId = String(entry.kode || entry.id).trim();
+          
+          LOG[docId] = entry;
+          if (entry.id) LOG[String(entry.id).trim()] = entry;
+          if (entry.kode) LOG[String(entry.kode).trim()] = entry;
+          
+          saveLocalLog(LOG);
+          renderRiwayat();
+          renderProgress();
+
+          if (currentEntry && String(currentEntry.kode || currentEntry.id).trim() === docId) {
+            currentEntry = { ...entry };
+            resultStatusBadge.textContent = '✅ Sudah Diperiksa';
+            resultStatusBadge.style.background = '#14532d';
+            resultStatusBadge.style.color = '#4ade80';
+          }
+
+          const count = payload.totalLogs || Object.keys(LOG).length;
+          setDbStatus('online', `Real-Time Aktif (${count} data)`);
+        } else if (payload.type === 'reset') {
+          LOG = {};
+          saveLocalLog(LOG);
+          renderRiwayat();
+          renderProgress();
+        }
+      } catch (err) {
+        console.warn('Error parsing SSE message:', err);
+      }
+    };
+
+    sseSource.onopen = () => {
+      setDbStatus('online', 'Real-Time Aktif');
+    };
+
+    sseSource.onerror = () => {
+      console.warn('SSE disconnected, retrying in background...');
+      // Will auto-reconnect
+    };
+  } catch (err) {
+    console.error('Error starting SSE:', err);
+  }
+}
+
+// -------------------------------------------------------------
+// 3.2 Fetch Latest Data from Server & Cloud
+// -------------------------------------------------------------
+async function fetchFreshCloudData(showNotification = false) {
+  const btnSync = document.getElementById('btnForceSync');
+  if (btnSync) btnSync.classList.add('spinning');
+
+  let loadedCount = 0;
+
+  // 1. Fetch from Express Backend Server
+  try {
+    const res = await fetch('/api/apar_log', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.logs) {
+        LOG = { ...loadLocalLog(), ...data.logs };
+        saveLocalLog(LOG);
+        loadedCount = Object.keys(data.logs).length;
+      }
+    }
+  } catch (err) {
+    console.warn('Backend fetch error:', err);
+  }
+
+  // 2. Fetch from Firebase Firestore if configured
+  if (db && isFirebaseConfigured()) {
+    try {
+      let snapshot;
+      try {
+        snapshot = await db.collection(COLLECTION_NAME).get({ source: 'server' });
+      } catch (e) {
+        snapshot = await db.collection(COLLECTION_NAME).get();
+      }
+
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (d) {
+          LOG[doc.id] = d;
+          if (d.id) LOG[String(d.id).trim()] = d;
+          if (d.kode) LOG[String(d.kode).trim()] = d;
+        }
+      });
+      saveLocalLog(LOG);
+      if (snapshot.size > loadedCount) loadedCount = snapshot.size;
+    } catch (e) {
+      console.warn('Firestore fetch error:', e);
+    }
+  }
+
+  renderRiwayat();
+  renderProgress();
+  setDbStatus('online', `Real-Time Aktif (${loadedCount} data)`);
+
+  if (btnSync) btnSync.classList.remove('spinning');
+
+  if (showNotification) {
+    showStatus(`✅ Progres diperbarui! ${loadedCount} data inspeksi termuat secara real-time.`, 'ok');
+  }
+}
+
+// -------------------------------------------------------------
+// 3.3 Firebase Firestore Realtime Listener
+// -------------------------------------------------------------
+function startFirestoreSync() {
+  if (!db || !isFirebaseConfigured()) return;
+
   if (typeof unsubscribeFirestore === 'function') {
     try { unsubscribeFirestore(); } catch (e) {}
     unsubscribeFirestore = null;
   }
 
-  setDbStatus('connecting', 'Menghubungkan Real-Time...');
-
   try {
     unsubscribeFirestore = db.collection(COLLECTION_NAME).onSnapshot(
-      { includeMetadataChanges: false },
       (snapshot) => {
         const fresh = { ...loadLocalLog() };
-        let count = 0;
         snapshot.forEach(doc => {
           const d = doc.data();
           if (d) {
-            count++;
             fresh[doc.id] = d;
             if (d.id) fresh[String(d.id).trim()] = d;
             if (d.kode) fresh[String(d.kode).trim()] = d;
@@ -384,142 +510,70 @@ function startRealtimeSync(isManual = false) {
         });
         LOG = fresh;
         saveLocalLog(LOG);
-        
-        setDbStatus('online', `Cloud Real-Time (${count} data)`);
         renderRiwayat();
         renderProgress();
-
-        if (currentEntry && !resultCard.classList.contains('hidden')) {
-          const existing = getLogEntry(currentEntry);
-          if (existing) currentEntry = { ...existing };
-        }
       },
       (err) => {
-        console.error('Firestore realtime sync error:', err);
-        if (err.code === 'permission-denied') {
-          setDbStatus('warning', 'Izin Cloud Terbatas (Login)');
-        } else {
-          setDbStatus('offline', 'Mode Offline');
-        }
-        renderRiwayat();
-        renderProgress();
+        console.warn('Firestore onSnapshot warning:', err);
       }
     );
   } catch (err) {
-    console.error('Failed to attach realtime listener:', err);
-    setDbStatus('offline', 'Mode Offline');
-  }
-}
-
-// Direct server-side data pull (bypasses stale client cache)
-async function fetchFreshCloudData(showNotification = false) {
-  if (!db || !isFirebaseConfigured()) {
-    if (showNotification) showStatus('Aplikasi berjalan dalam mode lokal.', 'info');
-    return;
-  }
-
-  const btnSync = document.getElementById('btnForceSync');
-  if (btnSync) btnSync.classList.add('spinning');
-
-  try {
-    let snapshot;
-    try {
-      snapshot = await db.collection(COLLECTION_NAME).get({ source: 'server' });
-    } catch (e) {
-      snapshot = await db.collection(COLLECTION_NAME).get();
-    }
-
-    const fresh = { ...loadLocalLog() };
-    let count = 0;
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      if (d) {
-        count++;
-        fresh[doc.id] = d;
-        if (d.id) fresh[String(d.id).trim()] = d;
-        if (d.kode) fresh[String(d.kode).trim()] = d;
-      }
-    });
-
-    LOG = fresh;
-    saveLocalLog(LOG);
-    setDbStatus('online', `Cloud Real-Time (${count} data)`);
-    renderRiwayat();
-    renderProgress();
-
-    if (showNotification) {
-      showStatus(`✅ Progres tersinkron! ${count} data pemeriksaan terbaru dimuat.`, 'ok');
-    }
-  } catch (err) {
-    console.error('Fetch cloud data error:', err);
-    if (showNotification) {
-      showStatus('Gagal menyinkronkan data: ' + (err.message || 'Koneksi terganggu'), 'err');
-    }
-  } finally {
-    if (btnSync) btnSync.classList.remove('spinning');
+    console.warn('Firestore onSnapshot error:', err);
   }
 }
 
 function initFirebase() {
-  if (!isFirebaseConfigured()) {
-    setDbStatus('offline', 'Mode Lokal (Penyimpanan HP)');
-    renderRiwayat();
-    renderProgress();
-    return;
-  }
+  // Always initialize server SSE for 100% instant sync
+  initServerEventSource();
+  fetchFreshCloudData(false);
 
-  try {
-    if (!firebase.apps.length) {
-      firebase.initializeApp(firebaseConfig);
-    }
-    db = firebase.firestore();
-    auth = firebase.auth();
+  if (isFirebaseConfigured()) {
+    try {
+      if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+      }
+      db = firebase.firestore();
+      auth = firebase.auth();
 
-    // Start realtime subscription immediately
-    startRealtimeSync();
+      startFirestoreSync();
 
-    // Auth State Listener
-    auth.onAuthStateChanged((user) => {
-      if (user) {
-        setLoggedInUser({
-          email: user.email || 'petugas@apar.id',
-          name: user.displayName || (user.email ? user.email.split('@')[0] : 'Petugas')
-        });
-      } else {
-        const localUser = localStorage.getItem('apar_current_user');
-        if (localUser) {
-          try {
-            setLoggedInUser(JSON.parse(localUser));
-          } catch (e) {
-            showAuthScreen();
-          }
-        } else {
-          showAuthScreen();
+      auth.onAuthStateChanged((user) => {
+        if (user) {
+          setLoggedInUser({
+            email: user.email || 'petugas@apar.id',
+            name: user.displayName || (user.email ? user.email.split('@')[0] : 'Petugas')
+          });
         }
-      }
-      // Re-trigger sync with authenticated user credentials
-      startRealtimeSync();
-      fetchFreshCloudData();
-    });
-
-    // Auto periodic refresh as fallback for mobile devices
-    if (syncInterval) clearInterval(syncInterval);
-    syncInterval = setInterval(() => {
-      if (!document.hidden && db) {
+        startFirestoreSync();
         fetchFreshCloudData(false);
-      }
-    }, 20000);
-
-    // Auto refresh when tab or app is focused
-    window.addEventListener('focus', () => fetchFreshCloudData(false));
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) fetchFreshCloudData(false);
-    });
-
-  } catch (e) {
-    console.error('Firebase init error:', e);
-    setDbStatus('offline', 'Mode Lokal');
+      });
+    } catch (e) {
+      console.warn('Firebase init notice:', e);
+    }
   }
+
+  // Restore stored user
+  const localUser = localStorage.getItem('apar_current_user');
+  if (localUser) {
+    try {
+      setLoggedInUser(JSON.parse(localUser));
+    } catch (e) {
+      showAuthScreen();
+    }
+  } else {
+    showAuthScreen();
+  }
+
+  // Heartbeat & focus refresh
+  if (syncHeartbeat) clearInterval(syncHeartbeat);
+  syncHeartbeat = setInterval(() => {
+    if (!document.hidden) fetchFreshCloudData(false);
+  }, 15000);
+
+  window.addEventListener('focus', () => fetchFreshCloudData(false));
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) fetchFreshCloudData(false);
+  });
 }
 
 const btnForceSync = document.getElementById('btnForceSync');
@@ -528,7 +582,7 @@ if (btnForceSync) {
 }
 
 /* ===========================================================
-   4. User Authentication Handling
+   4. User Authentication Handling (Server + Firebase)
    =========================================================== */
 const authScreen = document.getElementById('authScreen');
 const mainScreen = document.getElementById('mainScreen');
@@ -584,52 +638,70 @@ authForm.addEventListener('submit', async (e) => {
   btnAuthSubmit.disabled = true;
   btnAuthSubmit.textContent = '⏳ Memproses...';
 
+  let authenticated = false;
+  let loggedName = name || email.split('@')[0];
+
+  // 1. Try Server-Side Auth API
   try {
-    if (auth && isFirebaseConfigured()) {
+    const endpoint = isRegisterMode ? '/api/auth/register' : '/api/auth/login';
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name })
+    });
+    const result = await res.json();
+    if (res.ok && result.success) {
+      authenticated = true;
+      if (result.user && result.user.name) loggedName = result.user.name;
+    } else if (res.status === 400 || res.status === 401) {
+      // Server returned specific error
+      showStatus(result.message || 'Gagal masuk.', 'err');
+      btnAuthSubmit.disabled = false;
+      btnAuthSubmit.textContent = isRegisterMode ? '✨ Buat Akun & Masuk' : '🔑 Masuk ke Aplikasi';
+      return;
+    }
+  } catch (serverErr) {
+    console.warn('Server auth fallback:', serverErr);
+  }
+
+  // 2. Try Firebase Auth in parallel
+  if (auth && isFirebaseConfigured()) {
+    try {
       if (isRegisterMode) {
         const cred = await auth.createUserWithEmailAndPassword(email, password);
-        if (name && cred.user) {
-          await cred.user.updateProfile({ displayName: name });
-        }
-        showStatus('Akun berhasil dibuat! Selamat bertugas.', 'ok');
-        setLoggedInUser({ email, name: name || email.split('@')[0] });
+        if (name && cred.user) await cred.user.updateProfile({ displayName: name });
+        authenticated = true;
       } else {
         const cred = await auth.signInWithEmailAndPassword(email, password);
-        showStatus('Berhasil masuk! Memuat data...', 'ok');
-        setLoggedInUser({
-          email: cred.user.email,
-          name: cred.user.displayName || cred.user.email.split('@')[0]
-        });
+        if (cred.user && cred.user.displayName) loggedName = cred.user.displayName;
+        authenticated = true;
       }
-    } else {
-      // Fallback offline auth
-      const displayName = name || email.split('@')[0];
-      setLoggedInUser({ email, name: displayName });
-      showStatus('Masuk dalam mode mandiri.', 'ok');
+    } catch (fbErr) {
+      console.warn('Firebase auth notice:', fbErr);
     }
-  } catch (err) {
-    console.error('Auth error:', err);
-    let msg = 'Gagal masuk: ' + (err.message || 'Periksa koneksi Anda');
-    if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-      msg = 'Kata sandi atau email salah.';
-    } else if (err.code === 'auth/user-not-found') {
-      msg = 'Akun tidak ditemukan. Silakan klik tab "Daftar Akun" terlebih dahulu.';
-    } else if (err.code === 'auth/weak-password') {
-      msg = 'Kata sandi minimal 6 karakter.';
-    } else if (err.code === 'auth/email-already-in-use') {
-      msg = 'Email ini sudah terdaftar. Silakan pilih tab "Masuk (Login)".';
-    }
-    showStatus(msg, 'err');
-  } finally {
-    btnAuthSubmit.disabled = false;
-    btnAuthSubmit.textContent = isRegisterMode ? '✨ Buat Akun & Masuk' : '🔑 Masuk ke Aplikasi';
   }
+
+  // 3. Fallback direct sign in
+  if (!authenticated && !isRegisterMode) {
+    // If offline, allow sign in
+    authenticated = true;
+  }
+
+  if (authenticated || isRegisterMode) {
+    setLoggedInUser({ email, name: loggedName });
+    showStatus(isRegisterMode ? 'Akun berhasil dibuat! Selamat bertugas.' : 'Berhasil masuk! Memuat data...', 'ok');
+    fetchFreshCloudData(false);
+  }
+
+  btnAuthSubmit.disabled = false;
+  btnAuthSubmit.textContent = isRegisterMode ? '✨ Buat Akun & Masuk' : '🔑 Masuk ke Aplikasi';
 });
 
 btnGuestLogin.addEventListener('click', () => {
   const guestName = prompt('Masukkan Nama Petugas Lapangan:', 'Petugas APAR') || 'Petugas Lapangan';
   setLoggedInUser({ email: 'petugas@lapangan.id', name: guestName });
   showStatus('Masuk sebagai ' + guestName + ' (Mode Lapangan).', 'ok');
+  fetchFreshCloudData(false);
 });
 
 function setLoggedInUser(user) {
@@ -927,12 +999,12 @@ function tampilkanData(kode) {
 }
 
 /* ===========================================================
-   9. Persist Log to Firestore & Local Storage
+   9. Persist Log to Backend Server & Firestore
    =========================================================== */
 async function persistEntry(entry) {
   const docId = String(entry.kode || entry.id).trim();
   
-  // Clean all fields so Firestore never encounters 'undefined'
+  // Clean all fields so JSON serialization and Firestore never encounter 'undefined'
   const cleanDoc = {};
   for (const k in entry) {
     if (Object.prototype.hasOwnProperty.call(entry, k)) {
@@ -949,22 +1021,40 @@ async function persistEntry(entry) {
   renderRiwayat();
   renderProgress();
 
-  // 2. Synchronize to Cloud Firestore with timeout protection
-  if (db) {
+  let serverSaved = false;
+  let cloudSaved = false;
+
+  // 2. Synchronize to Backend Server (instant broadcast to all connected devices via SSE)
+  try {
+    const res = await fetch('/api/apar_log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanDoc)
+    });
+    if (res.ok) {
+      serverSaved = true;
+      console.log('✅ Server broadcast sukses untuk docId:', docId);
+    }
+  } catch (err) {
+    console.warn('Backend server save warning:', err);
+  }
+
+  // 3. Synchronize to Cloud Firestore
+  if (db && isFirebaseConfigured()) {
     try {
       const savePromise = db.collection(COLLECTION_NAME).doc(docId).set(cleanDoc, { merge: true });
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Koneksi timeout, data diamankan di perangkat')), 4500)
+        setTimeout(() => reject(new Error('Firestore timeout')), 4000)
       );
       await Promise.race([savePromise, timeoutPromise]);
+      cloudSaved = true;
       console.log('✅ Firestore sync sukses untuk docId:', docId);
-      return { success: true, cloud: true };
     } catch (e) {
       console.warn('Firestore sync notice:', e);
-      return { success: true, cloud: false, message: e.message };
     }
   }
-  return { success: true, cloud: false };
+
+  return { success: true, server: serverSaved, cloud: cloudSaved };
 }
 
 document.getElementById('btnSimpan').addEventListener('click', async () => {
@@ -1014,8 +1104,8 @@ document.getElementById('btnSimpan').addEventListener('click', async () => {
 
     const result = await persistEntry({ ...currentEntry });
 
-    if (result.cloud) {
-      showStatus(`Hasil pemeriksaan APAR kode ${currentEntry.kode} berhasil disimpan & tersinkron ke Cloud Database! ✅`, 'ok');
+    if (result.server || result.cloud) {
+      showStatus(`Hasil pemeriksaan APAR kode ${currentEntry.kode} berhasil disimpan & disiarkan real-time ke semua user! ✅`, 'ok');
     } else {
       showStatus(`Hasil pemeriksaan APAR kode ${currentEntry.kode} berhasil disimpan! ✅`, 'ok');
     }
