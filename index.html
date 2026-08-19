@@ -164,7 +164,13 @@
           <div class="result-title" id="resultTitle">Nama Ruangan</div>
           <dl class="result-list" id="resultList"></dl>
 
-          <h3>📋 KONDISI FISIK APAR</h3>
+          <div class="kondisi-header-wrap">
+            <h3 style="margin: 0;">📋 KONDISI FISIK APAR</h3>
+            <span id="kondisiCounter" class="kondisi-counter-pill">0/6 Terisi</span>
+          </div>
+          <p class="hint" style="margin-bottom: 10px; font-size: 0.8rem;">
+            Semua 6 poin pemeriksaan di bawah ini <strong style="color:#f87171;">wajib diisi</strong> sebelum menyimpan.
+          </p>
           <div id="kondisiList"></div>
 
           <h3>📝 CATATAN / KETERANGAN</h3>
@@ -576,15 +582,15 @@ tabBtnScan.addEventListener('click', () => goTab('scan'));
 tabBtnRiwayat.addEventListener('click', () => goTab('riwayat'));
 
 /* ===========================================================
-   6. Checklist Kondisi & Form Handling
+   6. Checklist Kondisi & Form Handling (Wajib Diisi Lengkap)
    =========================================================== */
 const KONDISI_ITEMS = [
-  { key: 'kebersihanTabung', label: 'Kebersihan Tabung APAR', good: 'Bersih', bad: 'Kotor' },
-  { key: 'indikatorTekanan', label: 'Pemeriksaan Indikator Tekanan', good: 'Hijau (Normal)', bad: 'Merah (Isi/Kurang)' },
-  { key: 'kunciPengaman', label: 'Pemeriksaan Kunci Pengaman / Pin', good: 'Ada & Tersegel', bad: 'Tidak Ada / Rusak' },
-  { key: 'selangSemprot', label: 'Pemeriksaan Selang Semprot (Hose)', good: 'Bagus / Tidak Retak', bad: 'Pecah / Retak' },
-  { key: 'nozzle', label: 'Pemeriksaan Corong / Nozzle', good: 'Lengkap & Bersih', bad: 'Tersumbat / Hilang' },
-  { key: 'tagLabel', label: 'TAG Label Kartu Pemeliharaan', good: 'Ada & Terisi', bad: 'Tidak Ada' },
+  { key: 'kebersihanTabung', label: '1. Kebersihan Tabung APAR', good: 'Bersih', bad: 'Kotor' },
+  { key: 'indikatorTekanan', label: '2. Indikator Tekanan', good: 'Hijau (Normal)', bad: 'Merah (Isi/Kurang)' },
+  { key: 'kunciPengaman', label: '3. Kunci Pengaman / Pin', good: 'Ada & Tersegel', bad: 'Tidak Ada / Rusak' },
+  { key: 'selangSemprot', label: '4. Selang Semprot (Hose)', good: 'Bagus / Tidak Retak', bad: 'Pecah / Retak' },
+  { key: 'nozzle', label: '5. Corong / Nozzle', good: 'Lengkap & Bersih', bad: 'Tersumbat / Hilang' },
+  { key: 'tagLabel', label: '6. TAG Label Pemeliharaan', good: 'Ada & Terisi', bad: 'Tidak Ada' },
 ];
 
 let currentEntry = null;
@@ -592,11 +598,14 @@ let currentEntry = null;
 function renderKondisiForm() {
   const wrap = document.getElementById('kondisiList');
   wrap.innerHTML = KONDISI_ITEMS.map(item => `
-    <div class="kondisi-item">
-      <div class="label">${item.label}</div>
+    <div class="kondisi-item" data-key="${item.key}">
+      <div class="label-group">
+        <span class="label">${item.label}</span>
+        <span class="wajib-tag">* Wajib</span>
+      </div>
       <div class="toggle2">
-        <button type="button" data-key="${item.key}" data-val="good">${item.good}</button>
-        <button type="button" data-key="${item.key}" data-val="bad">${item.bad}</button>
+        <button type="button" data-key="${item.key}" data-val="good">✓ ${item.good}</button>
+        <button type="button" data-key="${item.key}" data-val="bad">✗ ${item.bad}</button>
       </div>
     </div>
   `).join('');
@@ -606,6 +615,12 @@ function renderKondisiForm() {
       const key = btn.dataset.key;
       const val = btn.dataset.val;
       currentEntry[key] = (currentEntry[key] === val) ? null : val;
+      
+      // Auto-remove invalid class once user interacts
+      const itemEl = document.querySelector(`.kondisi-item[data-key="${key}"]`);
+      if (itemEl && currentEntry[key]) {
+        itemEl.classList.remove('invalid');
+      }
       refreshKondisiButtons();
     });
   });
@@ -613,11 +628,39 @@ function renderKondisiForm() {
 }
 
 function refreshKondisiButtons() {
+  let filledCount = 0;
+  KONDISI_ITEMS.forEach(item => {
+    const val = currentEntry ? currentEntry[item.key] : null;
+    const itemEl = document.querySelector(`.kondisi-item[data-key="${item.key}"]`);
+    if (val) filledCount++;
+
+    if (itemEl) {
+      const tagEl = itemEl.querySelector('.wajib-tag, .terisi-tag');
+      if (tagEl) {
+        if (val) {
+          tagEl.className = 'terisi-tag';
+          tagEl.textContent = '✓ Terisi';
+          itemEl.classList.add('valid');
+        } else {
+          tagEl.className = 'wajib-tag';
+          tagEl.textContent = '* Wajib';
+          itemEl.classList.remove('valid');
+        }
+      }
+    }
+  });
+
+  const counterPill = document.getElementById('kondisiCounter');
+  if (counterPill) {
+    counterPill.textContent = `${filledCount}/6 Terisi`;
+    counterPill.classList.toggle('complete', filledCount === 6);
+  }
+
   document.querySelectorAll('#kondisiList button').forEach(btn => {
     const key = btn.dataset.key;
     const val = btn.dataset.val;
     btn.classList.remove('on-good', 'on-bad');
-    if (currentEntry[key] === val) {
+    if (currentEntry && currentEntry[key] === val) {
       btn.classList.add(val === 'good' ? 'on-good' : 'on-bad');
     }
   });
@@ -631,7 +674,7 @@ const fotoPreview = document.getElementById('fotoPreview');
 const btnUploadFoto = document.getElementById('btnUploadFoto');
 const btnHapusFoto = document.getElementById('btnHapusFoto');
 
-function compressImage(file, maxDim = 900, quality = 0.6) {
+function compressImage(file, maxDim = 640, quality = 0.5) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();
@@ -681,7 +724,7 @@ fotoInput.addEventListener('change', async () => {
 });
 
 btnHapusFoto.addEventListener('click', () => {
-  currentEntry.foto = null;
+  if (currentEntry) currentEntry.foto = null;
   fotoPreview.src = '';
   fotoPreview.classList.remove('show');
   btnHapusFoto.classList.add('hidden');
@@ -721,6 +764,12 @@ function tampilkanData(kode) {
   currentEntry = existing ? { ...existing } : {
     id: String(data.id || data.kode).trim(),
     kode: String(data.kode).trim(),
+    gedung: data.gedung || '',
+    ruangan: data.ruangan || '',
+    lantai: data.lantai || '',
+    merk: data.merk || '',
+    kapasitas: data.kapasitas || '',
+    jenisGas: data.jenisGas || '',
     kebersihanTabung: null,
     indikatorTekanan: null,
     kunciPengaman: null,
@@ -773,50 +822,105 @@ function tampilkanData(kode) {
    9. Persist Log to Firestore & Local Storage
    =========================================================== */
 async function persistEntry(entry) {
-  const docId = String(entry.id || entry.kode).trim();
+  const docId = String(entry.kode || entry.id).trim();
   
-  LOG[docId] = entry;
-  if (entry.id) LOG[String(entry.id).trim()] = entry;
-  if (entry.kode) LOG[String(entry.kode).trim()] = entry;
+  // Clean all fields so Firestore never encounters 'undefined'
+  const cleanDoc = {};
+  for (const k in entry) {
+    if (Object.prototype.hasOwnProperty.call(entry, k)) {
+      cleanDoc[k] = entry[k] !== undefined ? entry[k] : null;
+    }
+  }
+
+  // 1. Instantly update in-memory and local cache
+  LOG[docId] = cleanDoc;
+  if (entry.id) LOG[String(entry.id).trim()] = cleanDoc;
+  if (entry.kode) LOG[String(entry.kode).trim()] = cleanDoc;
   
   saveLocalLog(LOG);
   renderRiwayat();
   renderProgress();
 
+  // 2. Synchronize to Cloud Firestore with timeout protection
   if (db) {
     try {
-      await db.collection(COLLECTION_NAME).doc(docId).set(entry);
-      return true;
+      const savePromise = db.collection(COLLECTION_NAME).doc(docId).set(cleanDoc, { merge: true });
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Koneksi timeout, data diamankan di perangkat')), 4500)
+      );
+      await Promise.race([savePromise, timeoutPromise]);
+      console.log('✅ Firestore sync sukses untuk docId:', docId);
+      return { success: true, cloud: true };
     } catch (e) {
-      console.error('Firestore persist error:', e);
-      showStatus('Tersimpan di memori perangkat. Akan sinkron saat online.', 'info');
-      return false;
+      console.warn('Firestore sync notice:', e);
+      return { success: true, cloud: false, message: e.message };
     }
   }
-  return true;
+  return { success: true, cloud: false };
 }
 
 document.getElementById('btnSimpan').addEventListener('click', async () => {
   if (!currentEntry) return;
   const btnSimpan = document.getElementById('btnSimpan');
-  
-  currentEntry.keterangan = keteranganInput.value.trim();
-  currentEntry.tanggal = new Date().toISOString();
-  currentEntry.pemeriksa = currentUser ? (currentUser.name || currentUser.email) : 'Petugas';
+
+  // ===== VALIDASI: SEMUA PERTANYAAN WAJIB DIISI =====
+  const missingItems = [];
+  KONDISI_ITEMS.forEach(item => {
+    const val = currentEntry[item.key];
+    const itemEl = document.querySelector(`.kondisi-item[data-key="${item.key}"]`);
+    if (!val) {
+      missingItems.push(item.label);
+      if (itemEl) itemEl.classList.add('invalid');
+    } else {
+      if (itemEl) itemEl.classList.remove('invalid');
+    }
+  });
+
+  if (missingItems.length > 0) {
+    showStatus(`⚠️ Harap lengkapi semua checklist kondisi (${missingItems.length} pertanyaan belum diisi)!`, 'err');
+    const firstInvalid = document.querySelector('.kondisi-item.invalid');
+    if (firstInvalid) {
+      firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return;
+  }
 
   btnSimpan.disabled = true;
   btnSimpan.textContent = '⏳ Menyimpan data...';
 
   try {
-    await persistEntry({ ...currentEntry });
-    showStatus('Hasil pemeriksaan APAR kode ' + currentEntry.kode + ' berhasil disimpan! ✅', 'ok');
+    currentEntry.keterangan = keteranganInput.value.trim();
+    currentEntry.tanggal = new Date().toISOString();
+    currentEntry.pemeriksa = currentUser ? (currentUser.name || currentUser.email) : 'Petugas';
+    
+    // Master data association
+    const masterData = DATA_BY_KODE[currentEntry.kode];
+    if (masterData) {
+      currentEntry.ruangan = masterData.ruangan || currentEntry.ruangan || '';
+      currentEntry.gedung = masterData.gedung || currentEntry.gedung || '';
+      currentEntry.lantai = masterData.lantai || currentEntry.lantai || '';
+      currentEntry.merk = masterData.merk || currentEntry.merk || '';
+      currentEntry.jenisGas = masterData.jenisGas || currentEntry.jenisGas || '';
+      currentEntry.kapasitas = masterData.kapasitas || currentEntry.kapasitas || '';
+    }
+
+    const result = await persistEntry({ ...currentEntry });
+
+    if (result.cloud) {
+      showStatus(`Hasil pemeriksaan APAR kode ${currentEntry.kode} berhasil disimpan & tersinkron ke Cloud Database! ✅`, 'ok');
+    } else {
+      showStatus(`Hasil pemeriksaan APAR kode ${currentEntry.kode} berhasil disimpan! ✅`, 'ok');
+    }
+
     resultStatusBadge.textContent = '✅ Sudah Diperiksa';
     resultStatusBadge.style.background = '#14532d';
     resultStatusBadge.style.color = '#4ade80';
+    
     renderRiwayat();
     renderProgress();
   } catch (e) {
-    showStatus('Gagal menyimpan: ' + e.message, 'err');
+    console.error('Error simpan:', e);
+    showStatus('Gagal menyimpan: ' + (e.message || 'Terjadi kesalahan sistem'), 'err');
   } finally {
     btnSimpan.disabled = false;
     btnSimpan.textContent = '✅ Simpan Hasil Pemeriksaan';
