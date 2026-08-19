@@ -84,9 +84,13 @@
       </div>
 
       <div class="header-actions">
-        <div id="dbStatus" class="db-status-pill db-connecting">
+        <div id="dbStatus" class="db-status-pill db-connecting" title="Status Database Bersama">
           <span>🔄</span> <span id="dbStatusText">Menyambungkan...</span>
         </div>
+
+        <button type="button" id="btnForceSync" class="btn-sync-pill" title="Tarik pembaruan data real-time terbaru dari server">
+          <span class="sync-icon">🔄</span> <span>Sinkron Data</span>
+        </button>
 
         <div class="user-profile-badge" id="userProfileBadge">
           <div class="user-avatar" id="userAvatar">P</div>
@@ -336,12 +340,124 @@ function escapeHtml(str) {
 }
 
 /* ===========================================================
-   3. Firebase Initialization & Realtime Sync
+   3. Firebase Initialization & Multi-User Realtime Sync
    =========================================================== */
+let unsubscribeFirestore = null;
+let syncInterval = null;
+
 function isFirebaseConfigured() {
   return typeof firebaseConfig !== 'undefined'
     && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('GANTI_')
     && firebaseConfig.projectId && !String(firebaseConfig.projectId).startsWith('GANTI_');
+}
+
+function startRealtimeSync(isManual = false) {
+  if (!db || !isFirebaseConfigured()) {
+    setDbStatus('offline', 'Mode Lokal (Penyimpanan HP)');
+    renderRiwayat();
+    renderProgress();
+    return;
+  }
+
+  // Clear previous listener if any
+  if (typeof unsubscribeFirestore === 'function') {
+    try { unsubscribeFirestore(); } catch (e) {}
+    unsubscribeFirestore = null;
+  }
+
+  setDbStatus('connecting', 'Menghubungkan Real-Time...');
+
+  try {
+    unsubscribeFirestore = db.collection(COLLECTION_NAME).onSnapshot(
+      { includeMetadataChanges: false },
+      (snapshot) => {
+        const fresh = { ...loadLocalLog() };
+        let count = 0;
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          if (d) {
+            count++;
+            fresh[doc.id] = d;
+            if (d.id) fresh[String(d.id).trim()] = d;
+            if (d.kode) fresh[String(d.kode).trim()] = d;
+          }
+        });
+        LOG = fresh;
+        saveLocalLog(LOG);
+        
+        setDbStatus('online', `Cloud Real-Time (${count} data)`);
+        renderRiwayat();
+        renderProgress();
+
+        if (currentEntry && !resultCard.classList.contains('hidden')) {
+          const existing = getLogEntry(currentEntry);
+          if (existing) currentEntry = { ...existing };
+        }
+      },
+      (err) => {
+        console.error('Firestore realtime sync error:', err);
+        if (err.code === 'permission-denied') {
+          setDbStatus('warning', 'Izin Cloud Terbatas (Login)');
+        } else {
+          setDbStatus('offline', 'Mode Offline');
+        }
+        renderRiwayat();
+        renderProgress();
+      }
+    );
+  } catch (err) {
+    console.error('Failed to attach realtime listener:', err);
+    setDbStatus('offline', 'Mode Offline');
+  }
+}
+
+// Direct server-side data pull (bypasses stale client cache)
+async function fetchFreshCloudData(showNotification = false) {
+  if (!db || !isFirebaseConfigured()) {
+    if (showNotification) showStatus('Aplikasi berjalan dalam mode lokal.', 'info');
+    return;
+  }
+
+  const btnSync = document.getElementById('btnForceSync');
+  if (btnSync) btnSync.classList.add('spinning');
+
+  try {
+    let snapshot;
+    try {
+      snapshot = await db.collection(COLLECTION_NAME).get({ source: 'server' });
+    } catch (e) {
+      snapshot = await db.collection(COLLECTION_NAME).get();
+    }
+
+    const fresh = { ...loadLocalLog() };
+    let count = 0;
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      if (d) {
+        count++;
+        fresh[doc.id] = d;
+        if (d.id) fresh[String(d.id).trim()] = d;
+        if (d.kode) fresh[String(d.kode).trim()] = d;
+      }
+    });
+
+    LOG = fresh;
+    saveLocalLog(LOG);
+    setDbStatus('online', `Cloud Real-Time (${count} data)`);
+    renderRiwayat();
+    renderProgress();
+
+    if (showNotification) {
+      showStatus(`✅ Progres tersinkron! ${count} data pemeriksaan terbaru dimuat.`, 'ok');
+    }
+  } catch (err) {
+    console.error('Fetch cloud data error:', err);
+    if (showNotification) {
+      showStatus('Gagal menyinkronkan data: ' + (err.message || 'Koneksi terganggu'), 'err');
+    }
+  } finally {
+    if (btnSync) btnSync.classList.remove('spinning');
+  }
 }
 
 function initFirebase() {
@@ -359,39 +475,8 @@ function initFirebase() {
     db = firebase.firestore();
     auth = firebase.auth();
 
-    try {
-      db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
-    } catch (e) {}
-
-    setDbStatus('connecting', 'Menghubungkan ke Cloud...');
-
-    // Realtime Database Listener
-    db.collection(COLLECTION_NAME).onSnapshot((snapshot) => {
-      const fresh = { ...loadLocalLog() };
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        if (d) {
-          fresh[doc.id] = d;
-          if (d.id) fresh[String(d.id).trim()] = d;
-          if (d.kode) fresh[String(d.kode).trim()] = d;
-        }
-      });
-      LOG = fresh;
-      saveLocalLog(LOG);
-      setDbStatus('online', 'Cloud Aktif (' + snapshot.size + ' data)');
-      renderRiwayat();
-      renderProgress();
-
-      if (currentEntry && !resultCard.classList.contains('hidden')) {
-        const existing = getLogEntry(currentEntry);
-        if (existing) currentEntry = { ...existing };
-      }
-    }, (err) => {
-      console.error('Firestore sync error:', err);
-      setDbStatus('offline', 'Mode Offline (Lokal)');
-      renderRiwayat();
-      renderProgress();
-    });
+    // Start realtime subscription immediately
+    startRealtimeSync();
 
     // Auth State Listener
     auth.onAuthStateChanged((user) => {
@@ -412,12 +497,34 @@ function initFirebase() {
           showAuthScreen();
         }
       }
+      // Re-trigger sync with authenticated user credentials
+      startRealtimeSync();
+      fetchFreshCloudData();
+    });
+
+    // Auto periodic refresh as fallback for mobile devices
+    if (syncInterval) clearInterval(syncInterval);
+    syncInterval = setInterval(() => {
+      if (!document.hidden && db) {
+        fetchFreshCloudData(false);
+      }
+    }, 20000);
+
+    // Auto refresh when tab or app is focused
+    window.addEventListener('focus', () => fetchFreshCloudData(false));
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) fetchFreshCloudData(false);
     });
 
   } catch (e) {
     console.error('Firebase init error:', e);
     setDbStatus('offline', 'Mode Lokal');
   }
+}
+
+const btnForceSync = document.getElementById('btnForceSync');
+if (btnForceSync) {
+  btnForceSync.addEventListener('click', () => fetchFreshCloudData(true));
 }
 
 /* ===========================================================
@@ -575,6 +682,7 @@ function goTab(name) {
     stopScanner();
     renderRiwayat();
     renderProgress();
+    fetchFreshCloudData(false);
   }
 }
 
