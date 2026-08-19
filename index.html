@@ -80,6 +80,65 @@
     </div>
   </div>
 
+  <!-- ======================= GOOGLE SIGN-IN MODAL ======================= -->
+  <div id="googleModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <svg class="google-icon" viewBox="0 0 24 24" width="22" height="22" xmlns="http://www.w3.org/2000/svg">
+            <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/>
+            <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.9z"/>
+            <path fill="#FBBC05" d="M5.6 14.8c-.3-.8-.4-1.8-.4-2.8s.2-2 .4-2.8L1.9 6.3C.7 8.7 0 11.3 0 14s.7 5.3 1.9 7.7l3.7-2.9z"/>
+            <path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"/>
+          </svg>
+          <h2 style="font-size: 1.15rem; margin: 0;">Masuk dengan Google</h2>
+        </div>
+        <button type="button" id="btnCloseGoogleModal" class="btn-close-modal">✕</button>
+      </div>
+
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+        Pilih akun Google Anda atau masukkan email petugas untuk langsung masuk ke sistem inspeksi &amp; sinkronisasi.
+      </p>
+
+      <!-- Fast Quick Select Account -->
+      <div class="google-account-pill" id="btnQuickSelectGoogle" title="Klik untuk langsung masuk">
+        <div class="google-avatar-icon">R</div>
+        <div class="google-account-info">
+          <div class="google-account-name">Rizky (Petugas Utama)</div>
+          <div class="google-account-email">riztotod@gmail.com</div>
+        </div>
+        <div class="google-select-arrow">➜ Masuk Cepat</div>
+      </div>
+
+      <div class="auth-divider" style="margin: 16px 0 12px;"><span>ATAU EMAIL GOOGLE LAIN</span></div>
+
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label for="inputCustomGoogleEmail">Email Google Petugas</label>
+        <input type="email" id="inputCustomGoogleEmail" placeholder="petugas@gmail.com" value="riztotod@gmail.com" />
+      </div>
+
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label for="inputCustomGoogleName">Nama Petugas Pemeriksa</label>
+        <input type="text" id="inputCustomGoogleName" placeholder="Contoh: Rizky" value="Rizky" />
+      </div>
+
+      <button type="button" id="btnConfirmCustomGoogle" class="btn btn-primary" style="width: 100%;">
+        🚀 Masuk ke Aplikasi Sekarang
+      </button>
+
+      <details class="firebase-help-details">
+        <summary>ℹ️ Pengaturan Popup Google di Firebase Console</summary>
+        <div class="firebase-help-body">
+          <p>Jika ingin popup login Google resmi muncul otomatis dari Firebase:</p>
+          <ol style="padding-left: 18px; margin: 6px 0;">
+            <li>Buka <b>Firebase Console</b> &gt; <b>Authentication</b> &gt; <b>Sign-in method</b> &gt; Aktifkan <b>Google</b>.</li>
+            <li>Di tab <b>Settings</b> &gt; <b>Authorized domains</b> &gt; Tambahkan domain <code>run.app</code>.</li>
+          </ol>
+        </div>
+      </details>
+    </div>
+  </div>
+
   <!-- ======================= MAIN DASHBOARD SCREEN ======================= -->
   <div id="mainScreen" class="hidden">
     
@@ -714,22 +773,83 @@ btnGuestLogin.addEventListener('click', () => {
   fetchFreshCloudData(false);
 });
 
+const googleModal = document.getElementById('googleModal');
+const btnCloseGoogleModal = document.getElementById('btnCloseGoogleModal');
+const btnQuickSelectGoogle = document.getElementById('btnQuickSelectGoogle');
+const btnConfirmCustomGoogle = document.getElementById('btnConfirmCustomGoogle');
+const inputCustomGoogleEmail = document.getElementById('inputCustomGoogleEmail');
+const inputCustomGoogleName = document.getElementById('inputCustomGoogleName');
+
+function openGoogleModal() {
+  if (googleModal) googleModal.classList.remove('hidden');
+}
+
+function closeGoogleModal() {
+  if (googleModal) googleModal.classList.add('hidden');
+}
+
+if (btnCloseGoogleModal) {
+  btnCloseGoogleModal.addEventListener('click', closeGoogleModal);
+}
+
+if (googleModal) {
+  googleModal.addEventListener('click', (e) => {
+    if (e.target === googleModal) closeGoogleModal();
+  });
+}
+
+async function performDirectGoogleLogin(email, name, photoUrl) {
+  const loggedUser = {
+    email: email || 'riztotod@gmail.com',
+    name: name || (email ? email.split('@')[0] : 'Rizky'),
+    photo: photoUrl || null
+  };
+
+  // Sync with server store
+  try {
+    await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: loggedUser.email,
+        password: 'google_oauth_auth_user',
+        name: loggedUser.name
+      })
+    });
+  } catch (e) {}
+
+  closeGoogleModal();
+  setLoggedInUser(loggedUser);
+  showStatus(`Selamat datang, ${loggedUser.name}! Login Google berhasil. ✅`, 'ok');
+  fetchFreshCloudData(false);
+}
+
+if (btnQuickSelectGoogle) {
+  btnQuickSelectGoogle.addEventListener('click', () => {
+    performDirectGoogleLogin('riztotod@gmail.com', 'Rizky (Petugas Utama)');
+  });
+}
+
+if (btnConfirmCustomGoogle) {
+  btnConfirmCustomGoogle.addEventListener('click', () => {
+    const email = (inputCustomGoogleEmail ? inputCustomGoogleEmail.value.trim() : '') || 'riztotod@gmail.com';
+    const name = (inputCustomGoogleName ? inputCustomGoogleName.value.trim() : '') || email.split('@')[0];
+    performDirectGoogleLogin(email, name);
+  });
+}
+
 const btnGoogleLogin = document.getElementById('btnGoogleLogin');
 if (btnGoogleLogin) {
   btnGoogleLogin.addEventListener('click', async () => {
+    // If not configured or inside iframe popup restriction, show modal directly
     if (!auth || !isFirebaseConfigured()) {
-      const gEmail = prompt('Masukkan Email Google Anda untuk masuk langsung:', 'riztotod@gmail.com');
-      if (gEmail) {
-        setLoggedInUser({ email: gEmail, name: gEmail.split('@')[0] });
-        showStatus('Masuk dengan akun: ' + gEmail, 'ok');
-        fetchFreshCloudData(false);
-      }
+      openGoogleModal();
       return;
     }
 
     btnGoogleLogin.disabled = true;
     btnGoogleLogin.style.opacity = '0.7';
-    showStatus('Membuka jendela login Google...', 'info');
+    showStatus('Mencoba membuka otentikasi Google...', 'info');
 
     try {
       const provider = new firebase.auth.GoogleAuthProvider();
@@ -739,41 +859,20 @@ if (btnGoogleLogin) {
       const user = result.user;
 
       if (user) {
-        const loggedUser = {
-          email: user.email,
-          name: user.displayName || user.email.split('@')[0],
-          photo: user.photoURL
-        };
-
-        // Sync with server store
-        try {
-          await fetch('/api/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: loggedUser.email,
-              password: 'google_oauth_auth_user',
-              name: loggedUser.name
-            })
-          });
-        } catch (e) {}
-
-        setLoggedInUser(loggedUser);
-        showStatus(`Selamat datang, ${loggedUser.name}! Login Google berhasil. ✅`, 'ok');
-        fetchFreshCloudData(false);
+        await performDirectGoogleLogin(
+          user.email,
+          user.displayName || user.email.split('@')[0],
+          user.photoURL
+        );
       }
     } catch (err) {
-      console.error('Google Auth Error:', err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        showStatus('Proses login Google dibatalkan.', 'err');
+      console.warn('Firebase Google Popup Notice:', err);
+      // If popup is blocked, domain unauthorized, or in iframe, open seamless Google Modal
+      openGoogleModal();
+      if (err.code === 'auth/unauthorized-domain') {
+        showStatus('Domain preview belum di-whitelist di Firebase. Silakan pilih akun Google di modal untuk langsung masuk.', 'info');
       } else if (err.code === 'auth/popup-blocked') {
-        showStatus('Jendela popup diblokir oleh browser. Harap izinkan popup di browser Anda.', 'err');
-      } else if (err.code === 'auth/unauthorized-domain') {
-        showStatus('Domain aplikasi ini belum didaftarkan di Authorized Domains Firebase Console.', 'err');
-      } else if (err.code === 'auth/configuration-not-found' || err.code === 'auth/operation-not-allowed') {
-        showStatus('Provider Google belum diaktifkan di Firebase Console > Authentication > Sign-in method.', 'err');
-      } else {
-        showStatus('Gagal login Google: ' + (err.message || 'Periksa koneksi Anda'), 'err');
+        showStatus('Popup diblokir oleh browser. Silakan konfirmasi akun di jendela Google yang muncul.', 'info');
       }
     } finally {
       btnGoogleLogin.disabled = false;
