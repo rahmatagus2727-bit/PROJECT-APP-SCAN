@@ -23,10 +23,11 @@
 // ==========================================================================
 
 const firebaseConfig = {
-  apiKey: "GANTI_DENGAN_API_KEY",
-  authDomain: "GANTI_DENGAN_PROJECT_ID.firebaseapp.com",
-  projectId: "GANTI_DENGAN_PROJECT_ID",
-  storageBucket: "GANTI_DENGAN_PROJECT_ID.appspot.com",
-  messagingSenderId: "GANTI_DENGAN_SENDER_ID",
-  appId: "GANTI_DENGAN_APP_ID",
+  apiKey: "AIzaSyDuGmtXwLAoi5LreJijcF1gMGNGeRhs__c",
+  authDomain: "apar-fss.firebaseapp.com",
+  projectId: "apar-fss",
+  storageBucket: "apar-fss.firebasestorage.app",
+  messagingSenderId: "118116318877",
+  appId: "1:118116318877:web:b7785c2a5e872b3dbf9e74",
+  measurementId: "G-0EEMCHHMLJ"
 };
