@@ -1,0 +1,14 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Node (kalau nanti ditambah tooling)
+node_modules/
+npm-debug.log*
+
+# Output export/download lokal dari aplikasi
+DATA_FSS_APAR_*.xlsx

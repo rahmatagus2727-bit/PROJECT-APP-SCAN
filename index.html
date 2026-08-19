@@ -2,762 +2,775 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Cek &amp; Pemeliharaan APAR — Scan QR</title>
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>Scan QR APAR — Pemeliharaan Bulanan</title>
+<link rel="stylesheet" href="style.css" />
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-
-<style>
-  * { box-sizing: border-box; }
-  body {
-    font-family: -apple-system, Roboto, Arial, sans-serif;
-    background: #0f172a;
-    color: #f1f5f9;
-    margin: 0;
-    padding: 16px;
-    padding-bottom: 60px;
-  }
-  .card {
-    background: #1e293b;
-    border-radius: 14px;
-    padding: 18px;
-    max-width: 900px;
-    margin: 0 auto 16px auto;
-  }
-  h1 { font-size: 1.2rem; margin: 0 0 4px; }
-  h2 { font-size: 1rem; margin: 0 0 10px; color: #cbd5e1; }
-  h3 { font-size: 0.9rem; margin: 16px 0 8px; color: #93c5fd; border-top: 1px solid #334155; padding-top: 12px; }
-  p.sub { color: #94a3b8; font-size: 0.85rem; margin: 0 0 14px; }
-  label { display: block; font-size: 0.85rem; margin: 10px 0 4px; color: #94a3b8; }
-  input, select, textarea {
-    width: 100%;
-    padding: 10px;
-    border-radius: 8px;
-    border: 1px solid #334155;
-    background: #0f172a;
-    color: #f1f5f9;
-    font-size: 1rem;
-    font-family: inherit;
-  }
-  textarea { min-height: 70px; resize: vertical; }
-  button {
-    padding: 12px;
-    border: none;
-    border-radius: 10px;
-    background: #22c55e;
-    color: #052e12;
-    font-weight: 700;
-    font-size: 1rem;
-    margin-top: 14px;
-    cursor: pointer;
-  }
-  button.secondary { background: #38bdf8; color: #06202f; }
-  button.warn { background: #f59e0b; color: #3a2100; }
-  button.ghost { background: transparent; border: 1px solid #475569; color: #cbd5e1; font-weight: 500; }
-  button.full { width: 100%; }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .hidden { display: none !important; }
-  .hint { font-size: 0.8rem; color: #64748b; margin-top: 6px; }
-  a.nav { color: #38bdf8; display: inline-block; margin-bottom: 4px; text-decoration: none; font-size: 0.85rem; }
-
-  /* Tabs */
-  .tabbar {
-    max-width: 900px;
-    margin: 0 auto 14px auto;
-    display: flex;
-    gap: 8px;
-  }
-  .tabbtn {
-    flex: 1;
-    background: #1e293b;
-    color: #94a3b8;
-    border-radius: 12px;
-    padding: 12px 8px;
-    font-weight: 700;
-    font-size: 0.9rem;
-    text-align: center;
-    margin-top: 0;
-    border: 2px solid transparent;
-  }
-  .tabbtn.active {
-    background: #16233c;
-    color: #f1f5f9;
-    border-color: #38bdf8;
-  }
-
-  /* Scanner */
-  #qr-reader { width: 100%; border-radius: 10px; overflow: hidden; }
-  #qr-reader-msg { font-size: 0.8rem; color: #64748b; margin-top: 8px; }
-  .scan-btns { display: flex; gap: 10px; }
-  .scan-btns button { flex: 1; }
-
-  .result-code {
-    background: #0f172a;
-    border: 1px solid #334155;
-    border-radius: 10px;
-    padding: 12px;
-    margin-top: 14px;
-  }
-  .result-code .kode-big { font-size: 1.4rem; font-weight: 800; color: #4ade80; }
-  .infogrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 8px; font-size: 0.85rem; }
-  .infogrid div span { color: #64748b; }
-  .status-pill {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    margin-top: 8px;
-  }
-  .status-belum { background: #7c2d12; color: #fed7aa; }
-  .status-selesai { background: #14532d; color: #bbf7d0; }
-
-  .foto-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-  .foto-thumb { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; border: 1px solid #334155; display: none; }
-  .foto-thumb.show { display: block; }
-
-  .toast {
-    position: fixed;
-    left: 50%;
-    bottom: 20px;
-    transform: translateX(-50%);
-    background: #16a34a;
-    color: white;
-    padding: 12px 20px;
-    border-radius: 10px;
-    font-weight: 700;
-    font-size: 0.9rem;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
-    z-index: 50;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.25s ease;
-  }
-  .toast.show { opacity: 1; }
-  .toast.error { background: #dc2626; }
-
-  /* Progress */
-  .progress-wrap { margin-top: 18px; }
-  .progress-bar-bg { background: #0f172a; border-radius: 999px; height: 14px; overflow: hidden; border: 1px solid #334155; }
-  .progress-bar-fill { background: linear-gradient(90deg,#22c55e,#4ade80); height: 100%; width: 0%; transition: width 0.3s ease; }
-  .progress-label { text-align: center; font-weight: 800; margin-top: 10px; font-size: 1rem; }
-  .progress-label.done { color: #4ade80; }
-
-  /* Table */
-  .table-wrap { overflow-x: auto; margin-top: 10px; border: 1px solid #334155; border-radius: 10px; }
-  table { border-collapse: collapse; width: 100%; font-size: 0.72rem; min-width: 1400px; }
-  th, td { border: 1px solid #334155; padding: 6px 8px; text-align: center; white-space: nowrap; }
-  thead th { background: #16233c; color: #93c5fd; position: sticky; top: 0; }
-  tbody tr:nth-child(even) { background: #16233c55; }
-  td.left { text-align: left; white-space: normal; min-width: 140px; }
-  td.status-cell.belum { color: #fca5a5; font-weight: 700; }
-  td.status-cell.selesai { color: #4ade80; font-weight: 700; }
-
-  .filter-row { display: flex; gap: 8px; margin-bottom: 4px; }
-  .filter-row input { flex: 1; }
-
-  details.danger { margin-top: 24px; }
-  details.danger summary { cursor: pointer; color: #64748b; font-size: 0.8rem; }
-  details.danger .box { margin-top: 10px; padding: 12px; border: 1px dashed #475569; border-radius: 10px; }
-</style>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="data.js"></script>
 </head>
 <body>
 
-<div class="card" style="margin-bottom:10px; padding-bottom:10px;">
-  <a class="nav" href="generate.html">🏷️ Generate / Cetak QR Kode →</a>
-  <h1>🧯 Cek &amp; Pemeliharaan APAR</h1>
-  <p class="sub">Scan QR / barcode di badan APAR untuk mengisi form pemeriksaan bulanan. Data tersimpan otomatis di perangkat ini (offline, tanpa server).</p>
+<div class="card">
+  <h1>📷 Scan QR APAR / FSS — Pemeliharaan Bulanan</h1>
+  <div class="hint">Arahkan kamera ke QR yang tertempel di alat. Data alat otomatis muncul dari Data FSS &amp; APAR, langsung diisi checklist KONDISI &amp; KETERANGAN seperti form Pemeliharaan APAR Bulanan.</div>
+  <div id="dbStatus" class="db-status db-offline">⏳ Menyiapkan database...</div>
 </div>
 
 <div class="tabbar">
-  <button class="tabbtn active" id="tabBtnScan">📷 Scan APAR</button>
-  <button class="tabbtn" id="tabBtnLog">📊 Log Data &amp; Download</button>
+  <button id="tabBtnScan" class="active">📷 Scan</button>
+  <button id="tabBtnRiwayat">📋 Riwayat &amp; Rekap</button>
 </div>
 
-<!-- ============ TAB SCAN ============ -->
-<div id="panelScan">
-  <div class="card">
-    <h2>1. Scan Kode / QR Alat</h2>
-    <div id="qr-reader"></div>
-    <div id="qr-reader-msg">Kamera belum aktif.</div>
-    <div class="scan-btns">
-      <button class="full" id="btnStartScan">▶️ Mulai Scan Kamera</button>
-      <button class="full ghost hidden" id="btnStopScan">⏹️ Stop</button>
-    </div>
+<div id="statusMsg" class="status"></div>
 
-    <label for="manualKode">Atau ketik kode manual</label>
+<!-- ======================= TAB: SCAN ======================= -->
+<div id="tabScan" class="tabpanel active">
+
+  <div class="card">
+    <h2>Scan QR Alat</h2>
+    <button id="btnStart">Mulai Scan QR</button>
+    <div id="reader" class="hidden"></div>
+
+    <label for="manualKode">Atau ketik kode alat manual</label>
     <div style="display:flex; gap:8px;">
-      <input type="text" id="manualKode" placeholder="Contoh: 110" />
-      <button class="secondary" style="margin-top:0; white-space:nowrap;" id="btnCari">🔎 Cari</button>
+      <input type="text" id="manualKode" placeholder="Contoh: 110" inputmode="numeric" />
+      <button id="btnCariManual" class="secondary small" style="width:auto;">Cari</button>
     </div>
-    <div class="hint">Kode ini sama dengan yang tercetak di QR/label alat (kolom "kode" di Data FSS &amp; APAR).</div>
+    <div class="hint" style="margin-top:10px;"><a class="nav" href="generate.html">🏷️ Cetak / buat QR kode alat di sini</a></div>
   </div>
 
-  <div class="card hidden" id="cardResult">
-    <h2>2. Detail Alat</h2>
-    <div class="result-code">
-      <div class="kode-big" id="rKode">-</div>
-      <div class="infogrid">
-        <div><span>No:</span> <b id="rNo">-</b></div>
-        <div><span>Ruangan:</span> <b id="rRuangan">-</b></div>
-        <div><span>Gedung:</span> <b id="rGedung">-</b></div>
-        <div><span>Lantai:</span> <b id="rLantai">-</b></div>
-        <div><span>Merk:</span> <b id="rMerk">-</b></div>
-        <div><span>Kapasitas:</span> <b id="rKapasitas">-</b></div>
-        <div><span>Jenis Gas:</span> <b id="rJenisGas">-</b></div>
-        <div><span>QRkode:</span> <b id="rQRkode">-</b></div>
-      </div>
-      <span class="status-pill" id="rStatusPill">Belum</span>
-      <div class="hint" id="rTanggal"></div>
-    </div>
+  <div class="card hidden" id="resultCard">
+    <span class="result-kode" id="resultKode">Kode</span>
+    <span class="result-kode" id="resultStatusBadge" style="background:#334155;color:#94a3b8;"></span>
+    <div class="result-title" id="resultTitle">Ruangan</div>
+    <dl class="result-list" id="resultList"></dl>
 
     <h3>KONDISI</h3>
-    <label>Kebersihan Tabung APAR</label>
-    <select id="fKebersihan">
-      <option value="-">- Pilih -</option>
-      <option>Bersih</option>
-      <option>Kotor / Berdebu</option>
-    </select>
-
-    <label>Pemeriksaan Indikator Tekanan</label>
-    <select id="fIndikator">
-      <option value="-">- Pilih -</option>
-      <option>Hijau</option>
-      <option>Kuning</option>
-      <option>Merah</option>
-      <option>Rusak</option>
-    </select>
-
-    <label>Pemeriksaan Kunci Pengaman</label>
-    <select id="fKunci">
-      <option value="-">- Pilih -</option>
-      <option>Ada</option>
-      <option>Tidak Ada</option>
-      <option>Rusak</option>
-    </select>
-
-    <label>Pemeriksaan Selang Semprot</label>
-    <select id="fSelang">
-      <option value="-">- Pilih -</option>
-      <option>Tidak Pecah</option>
-      <option>Pecah</option>
-      <option>Rusak</option>
-    </select>
-
-    <label>Pemeriksaan Nozzle</label>
-    <select id="fNozzle">
-      <option value="-">- Pilih -</option>
-      <option>Ada</option>
-      <option>Tidak Ada</option>
-      <option>Tersumbat</option>
-    </select>
-
-    <label>TAG Label Pemeliharaan</label>
-    <select id="fTag">
-      <option value="-">- Pilih -</option>
-      <option>Ada</option>
-      <option>Tidak Ada</option>
-      <option>Kadaluarsa</option>
-    </select>
-
-    <label>EVIDEN (Kesimpulan Kondisi)</label>
-    <select id="fEviden">
-      <option value="-">- Pilih -</option>
-      <option>AMAN</option>
-      <option>PERLU PERBAIKAN</option>
-      <option>PERLU PENGGANTIAN</option>
-    </select>
+    <div id="kondisiList"></div>
 
     <h3>KETERANGAN</h3>
-    <textarea id="fKeterangan" placeholder="Catatan tambahan hasil pemeriksaan..."></textarea>
+    <textarea id="keteranganInput" placeholder="Catatan pemeriksaan (opsional)"></textarea>
 
-    <div class="foto-row">
-      <button type="button" class="secondary" style="margin-top:0;" id="btnUploadFoto">📷 Upload / Ambil Foto</button>
-      <img id="fotoThumb" class="foto-thumb" alt="foto bukti" />
-      <span class="hint" id="fotoFileName"></span>
-    </div>
-    <input type="file" accept="image/*" capture="environment" id="fotoInput" class="hidden" />
-
-    <button class="full" id="btnSimpan">✅ Simpan Pemeriksaan</button>
-    <button class="full ghost" id="btnScanLagi">🔁 Scan Alat Lain</button>
-  </div>
-</div>
-
-<!-- ============ TAB LOG DATA ============ -->
-<div id="panelLog" class="hidden">
-  <div class="card">
-    <h2>📊 Log Data FSS &amp; APAR</h2>
-    <div class="filter-row">
-      <input type="text" id="searchLog" placeholder="Cari ruangan / gedung / kode..." />
-    </div>
-    <div class="table-wrap">
-      <table id="logTable">
-        <thead>
-          <tr>
-            <th rowspan="2">No</th>
-            <th rowspan="2">RUANGAN</th>
-            <th rowspan="2">GEDUNG</th>
-            <th rowspan="2">LANTAI</th>
-            <th rowspan="2">MERK</th>
-            <th rowspan="2">KAPASITAS</th>
-            <th rowspan="2">JENIS GAS</th>
-            <th rowspan="2">kode</th>
-            <th rowspan="2">QRkode</th>
-            <th colspan="7">KONDISI</th>
-            <th rowspan="2">KETERANGAN</th>
-            <th rowspan="2">FOTO</th>
-            <th rowspan="2">TANGGAL PERIKSA</th>
-            <th rowspan="2">STATUS TUGAS</th>
-          </tr>
-          <tr>
-            <th>Kebersihan Tabung APAR</th>
-            <th>Pemeriksaan Indikator Tekanan</th>
-            <th>Pemeriksaan Kunci Pengaman</th>
-            <th>Pemeriksaan Selang Semprot</th>
-            <th>Pemeriksaan Nozzle</th>
-            <th>TAG Label Pemeliharaan</th>
-            <th>EVIDEN</th>
-          </tr>
-        </thead>
-        <tbody id="logTbody"></tbody>
-      </table>
-    </div>
-
-    <div class="progress-wrap">
-      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
-      <div class="progress-label" id="progressLabel">0 dari 0 tugas selesai</div>
-    </div>
-
-    <button class="full secondary" id="btnDownload">⬇️ Download Excel (Data FSS &amp; APAR)</button>
-    <div class="hint" id="downloadHint" style="text-align:center;"></div>
-
-    <details class="danger">
-      <summary>⚙️ Lainnya</summary>
-      <div class="box">
-        <button class="full warn" id="btnReset">🗑️ Reset Semua Data Pemeriksaan</button>
-        <div class="hint">Menghapus semua isian KONDISI, keterangan, dan foto yang sudah disimpan di perangkat ini. Tidak bisa dibatalkan.</div>
+    <div class="foto-upload">
+      <label>Bukti Foto (EVIDEN)</label>
+      <div class="foto-btn-row">
+        <button id="btnUploadFoto" class="secondary small" style="flex:1;">📷 Upload Foto</button>
+        <button id="btnHapusFoto" class="ghost small hidden" style="flex:1;">🗑️ Hapus Foto</button>
       </div>
-    </details>
+      <input type="file" id="fotoInput" accept="image/*" capture="environment" class="hidden" />
+      <img id="fotoPreview" class="foto-preview" alt="Preview bukti foto" />
+    </div>
+
+    <button id="btnSimpan">✅ Simpan Hasil Pemeriksaan</button>
+    <button id="btnScanLagi" class="secondary">Scan Lagi</button>
   </div>
+
 </div>
 
-<div class="toast" id="toast"></div>
+<!-- ======================= TAB: RIWAYAT ======================= -->
+<div id="tabRiwayat" class="tabpanel">
+
+  <div class="card">
+    <h2>Riwayat Pemeriksaan (sudah discan/diisi)</h2>
+    <div class="search-row">
+      <input type="text" id="searchRiwayat" placeholder="Cari kode / ruangan / gedung..." />
+    </div>
+    <div id="logList"></div>
+  </div>
+
+  <div class="card">
+    <h2>Progres Tugas</h2>
+    <div class="progress-wrap">
+      <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <div class="progress-label"><span id="progressText">0 / 0 selesai</span><span id="progressPct">0%</span></div>
+    </div>
+    <div class="progress-done-all hidden" id="doneAllLabel">🎉 Done All — Semua Tugas Selesai!</div>
+  </div>
+
+  <div class="card">
+    <h2>Export Data</h2>
+    <div class="hint">Download data FSS &amp; APAR lengkap dengan kolom QRkode, KONDISI, EVIDEN, KETERANGAN, dan foto bukti sesuai hasil pemeriksaan di atas.</div>
+    <button id="btnDownload" class="secondary">⬇️ Download Excel (DATA FSS &amp; APAR)</button>
+    <button id="btnResetLog" class="danger">🗑️ Reset Semua Riwayat</button>
+  </div>
+
+</div>
 
 <script>
-  // ===== Data FSS & APAR (master data alat, dari file DATA_FSS_APAR) =====
-  const APAR_DATA = [{"no": 1, "ruangan": "Pos Security NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "110"}, {"no": 2, "ruangan": "Pos Security NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "111"}, {"no": 3, "ruangan": "Teras NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "125 Lb", "jenisGas": "Dry Chemical Powder", "kode": "112"}, {"no": 4, "ruangan": "Lobby NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "113"}, {"no": 5, "ruangan": "MDF NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "114"}, {"no": 6, "ruangan": "MDF NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "115"}, {"no": 7, "ruangan": "Rectifier NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "116"}, {"no": 8, "ruangan": "Rectifier NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "117"}, {"no": 9, "ruangan": "Rectifier NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "118"}, {"no": 10, "ruangan": "Trafo NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "119"}, {"no": 11, "ruangan": "Cubical NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "120"}, {"no": 12, "ruangan": "Baterai Kering 1 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "121"}, {"no": 13, "ruangan": "Baterai Kering 1 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "122"}, {"no": 14, "ruangan": "Baterai Basah 1 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "123"}, {"no": 15, "ruangan": "Baterai Kering 2 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "124"}, {"no": 16, "ruangan": "Baterai Kering 2 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "125"}, {"no": 17, "ruangan": "Lobby NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "126"}, {"no": 18, "ruangan": "UPS NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "127"}, {"no": 19, "ruangan": "STP NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "128"}, {"no": 20, "ruangan": "Koridor NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "129"}, {"no": 21, "ruangan": "OLT NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "130"}, {"no": 22, "ruangan": "FTM NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "131"}, {"no": 23, "ruangan": "Lobby NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "132"}, {"no": 24, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "133"}, {"no": 25, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "134"}, {"no": 26, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "135"}, {"no": 27, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "136"}, {"no": 28, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "137"}, {"no": 29, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "138"}, {"no": 30, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "139"}, {"no": 31, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "140"}, {"no": 32, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "141"}, {"no": 33, "ruangan": "Panel NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "142"}, {"no": 34, "ruangan": "Panel NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "143"}, {"no": 35, "ruangan": "Lobby NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "144"}, {"no": 36, "ruangan": "Personil NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "145"}, {"no": 37, "ruangan": "Sentral NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "146"}, {"no": 38, "ruangan": "Sentral NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "147"}, {"no": 39, "ruangan": "Flexi NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "148"}, {"no": 40, "ruangan": "Flexi NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "149"}, {"no": 41, "ruangan": "Metro NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "150"}, {"no": 42, "ruangan": "Metro NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "151"}, {"no": 43, "ruangan": "Lobby NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "152"}, {"no": 44, "ruangan": "Personil NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "153"}, {"no": 45, "ruangan": "BTS Flexi NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "154"}, {"no": 46, "ruangan": "Space NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "155"}, {"no": 47, "ruangan": "Monitoring NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "156"}, {"no": 48, "ruangan": "Transmisi NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "157"}, {"no": 49, "ruangan": "Transmisi NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "158"}, {"no": 50, "ruangan": "Lobby NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "159"}, {"no": 51, "ruangan": "Personil NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "160"}, {"no": 52, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "161"}, {"no": 53, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "162"}, {"no": 54, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "163"}, {"no": 55, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "164"}, {"no": 56, "ruangan": "IPTV NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "165"}, {"no": 57, "ruangan": "IPTV NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "166"}, {"no": 58, "ruangan": "NGN NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "167"}, {"no": 59, "ruangan": "NGN NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "168"}, {"no": 60, "ruangan": "NGN NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "169"}, {"no": 61, "ruangan": "Monitor NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "170"}, {"no": 62, "ruangan": "Monitor NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "171"}, {"no": 63, "ruangan": "Lobby NETRE LT.7", "gedung": "POP/NETRE", "lantai": 7, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "172"}, {"no": 64, "ruangan": "Mesin Lift NETRE LT.7", "gedung": "POP/NETRE", "lantai": 7, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "173"}, {"no": 65, "ruangan": "DICO Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "FIREFIX", "kapasitas": "3,5 kg", "jenisGas": "Dry Cemical Powder", "kode": "174"}, {"no": 66, "ruangan": "DICO Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "3,5 kg", "jenisGas": "CO2", "kode": "175"}, {"no": 67, "ruangan": "DICO Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "176"}, {"no": 68, "ruangan": "Lorong Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "177"}, {"no": 69, "ruangan": "TELIN Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "178"}, {"no": 70, "ruangan": "IPTV Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "179"}, {"no": 71, "ruangan": "Baterai Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "180"}, {"no": 72, "ruangan": "Lobby Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "181"}, {"no": 73, "ruangan": "Sentral Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "182"}, {"no": 74, "ruangan": "Sentral Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "183"}, {"no": 75, "ruangan": "Sentral Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "184"}, {"no": 76, "ruangan": "Lobby Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "185"}, {"no": 77, "ruangan": "Lobby Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "186"}, {"no": 78, "ruangan": "Netra ARNET", "gedung": "ARNET", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "187"}, {"no": 79, "ruangan": "Lobby ARNET", "gedung": "ARNET", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "188"}, {"no": 80, "ruangan": "Pantry ARNET", "gedung": "ARNET", "lantai": "", "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "189"}, {"no": 81, "ruangan": "Depan Mushola ARNET", "gedung": "ARNET", "lantai": "", "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "190"}, {"no": 82, "ruangan": "Repair MODEM ARNET", "gedung": "ARNET", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "191"}, {"no": 83, "ruangan": "Repair MODEM ARNET", "gedung": "ARNET", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "192"}, {"no": 84, "ruangan": "Lobby Timur OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "193"}, {"no": 85, "ruangan": "Lobby Barat OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "FIREFIX", "kapasitas": "3,5 kg", "jenisGas": "Dry Cemical Powder", "kode": "194"}, {"no": 86, "ruangan": "Lorong OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "195"}, {"no": 87, "ruangan": "Lorong OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "196"}, {"no": 88, "ruangan": "Gudang Log SBU OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "197"}, {"no": 89, "ruangan": "Gudang Log SBU OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "198"}, {"no": 90, "ruangan": "Gudang TA OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "199"}, {"no": 91, "ruangan": "Lobby Timur OPMC LT.2", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "200"}, {"no": 92, "ruangan": "Koridor OPMC LT.2", "gedung": "OPMC", "lantai": "", "merk": "FIREFIX", "kapasitas": "3,5 kg", "jenisGas": "Dry Cemical Powder", "kode": "201"}];
+/* ===========================================================
+   Index cepat data alat: kode -> baris data
+   =========================================================== */
+const DATA_BY_KODE = {};
+APAR_DATA.forEach(r => { if (r.kode) DATA_BY_KODE[String(r.kode).trim()] = r; });
+const TOTAL_TUGAS = APAR_DATA.filter(r => r.kode).length;
 
-  const STORAGE_KEY = 'apar_pemeliharaan_v1';
-  const KONDISI_FIELDS = ['kebersihan','indikator','kunci','selang','nozzle','tag','eviden'];
-  const KONDISI_LABELS = {
-    kebersihan: 'Kebersihan Tabung APAR',
-    indikator: 'Pemeriksaan Indikator Tekanan',
-    kunci: 'Pemeriksaan Kunci Pengaman',
-    selang: 'Pemeriksaan Selang Semprot',
-    nozzle: 'Pemeriksaan Nozzle',
-    tag: 'TAG Label Pemeliharaan',
-    eviden: 'EVIDEN'
-  };
+/* ===========================================================
+   Penyimpanan riwayat — DATABASE BERSAMA (Firebase Firestore)
+   Semua orang yang buka aplikasi ini akan melihat riwayat &
+   progres yang SAMA (realtime), bukan cuma tersimpan di 1 HP.
+   localStorage tetap dipakai sebagai cache offline + fallback
+   kalau firebase-config.js belum diisi.
+   =========================================================== */
+const LOG_KEY = 'apar_log_v1';
+function loadLocalLog() {
+  try { return JSON.parse(localStorage.getItem(LOG_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function saveLocalLog(log) { localStorage.setItem(LOG_KEY, JSON.stringify(log)); }
 
-  function loadChecks() {
+let LOG = loadLocalLog();
+let db = null;
+let dbReady = false;
+const COLLECTION_NAME = 'apar_log';
+
+const dbStatusEl = document.getElementById('dbStatus');
+function setDbStatus(mode, text) {
+  dbStatusEl.textContent = text;
+  dbStatusEl.className = 'db-status db-' + mode;
+}
+
+function isFirebaseConfigured() {
+  return typeof firebaseConfig !== 'undefined'
+    && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('GANTI_')
+    && firebaseConfig.projectId && !String(firebaseConfig.projectId).startsWith('GANTI_');
+}
+
+function initFirebase() {
+  if (!isFirebaseConfigured()) {
+    setDbStatus('offline', '📴 Mode lokal — riwayat cuma tersimpan di HP ini (lihat README untuk aktifkan database bersama)');
+    renderRiwayat();
+    renderProgress();
+    return;
+  }
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    try { db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (e) {}
+
+    setDbStatus('connecting', '🔄 Menyambungkan ke database bersama...');
+
+    db.collection(COLLECTION_NAME).onSnapshot((snapshot) => {
+      const fresh = {};
+      snapshot.forEach(doc => { fresh[doc.id] = doc.data(); });
+      LOG = fresh;
+      saveLocalLog(LOG); // cache offline
+      dbReady = true;
+      setDbStatus('online', '🟢 Tersambung — progres terlihat oleh semua orang');
+      renderRiwayat();
+      renderProgress();
+      // Kalau lagi buka hasil scan, sinkronkan badge status juga
+      if (currentEntry && !resultCard.classList.contains('hidden')) {
+        const existing = LOG[currentEntry.id];
+        if (existing) currentEntry = { ...existing };
+      }
+    }, (err) => {
+      console.error('Firestore error:', err);
+      setDbStatus('offline', '⚠️ Gagal konek database — pakai data lokal sementara');
+    });
+  } catch (e) {
+    console.error(e);
+    setDbStatus('offline', '⚠️ Konfigurasi database salah — cek firebase-config.js');
+  }
+}
+
+// Simpan 1 hasil pemeriksaan ke database bersama (atau lokal kalau offline)
+async function persistEntry(entry) {
+  LOG[entry.id] = entry;
+  saveLocalLog(LOG);
+  if (db) {
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-    } catch (e) { return {}; }
-  }
-  function saveChecks(checks) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(checks));
-  }
-  let CHECKS = loadChecks();
-
-  function formatTanggal(d) {
-    const pad = n => String(n).padStart(2, '0');
-    return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}, ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}`;
-  }
-
-  function isSelesai(entry) {
-    if (!entry) return false;
-    return KONDISI_FIELDS.every(k => entry.kondisi && entry.kondisi[k] && entry.kondisi[k] !== '-');
-  }
-
-  function showToast(msg, isError) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.className = 'toast show' + (isError ? ' error' : '');
-    clearTimeout(showToast._timer);
-    showToast._timer = setTimeout(() => { t.className = 'toast'; }, 2200);
-  }
-
-  // ===== Tabs =====
-  const tabBtnScan = document.getElementById('tabBtnScan');
-  const tabBtnLog = document.getElementById('tabBtnLog');
-  const panelScan = document.getElementById('panelScan');
-  const panelLog = document.getElementById('panelLog');
-
-  function goTab(tab) {
-    if (tab === 'scan') {
-      tabBtnScan.classList.add('active');
-      tabBtnLog.classList.remove('active');
-      panelScan.classList.remove('hidden');
-      panelLog.classList.add('hidden');
-    } else {
-      tabBtnLog.classList.add('active');
-      tabBtnScan.classList.remove('active');
-      panelLog.classList.remove('hidden');
-      panelScan.classList.add('hidden');
-      renderLogTable();
-      updateProgress();
+      await db.collection(COLLECTION_NAME).doc(String(entry.id)).set(entry);
+      return true;
+    } catch (e) {
+      console.error('Gagal simpan ke database bersama, tersimpan lokal dulu:', e);
+      showStatus('Tersimpan di HP ini, tapi gagal sinkron ke database bersama (cek koneksi internet).', 'err');
+      return false;
     }
   }
-  tabBtnScan.addEventListener('click', () => goTab('scan'));
-  tabBtnLog.addEventListener('click', () => goTab('log'));
+  return true;
+}
 
-  // ===== Cari data by kode =====
-  function findByKode(kode) {
-    kode = String(kode).trim();
-    return APAR_DATA.find(r => String(r.kode).trim() === kode);
-  }
-
-  let currentItem = null;
-  let currentFotoBase64 = null;
-  let currentFotoName = '';
-
-  const cardResult = document.getElementById('cardResult');
-
-  function fillForm(item) {
-    currentItem = item;
-    const entry = CHECKS[item.kode] || {};
-    document.getElementById('rKode').textContent = 'Kode: ' + item.kode;
-    document.getElementById('rNo').textContent = item.no ?? '-';
-    document.getElementById('rRuangan').textContent = item.ruangan || '-';
-    document.getElementById('rGedung').textContent = item.gedung || '-';
-    document.getElementById('rLantai').textContent = item.lantai || '-';
-    document.getElementById('rMerk').textContent = item.merk || '-';
-    document.getElementById('rKapasitas').textContent = item.kapasitas || '-';
-    document.getElementById('rJenisGas').textContent = item.jenisGas || '-';
-    document.getElementById('rQRkode').textContent = item.kode;
-
-    const pill = document.getElementById('rStatusPill');
-    const selesai = isSelesai(entry);
-    pill.textContent = selesai ? '✅ Selesai' : 'Belum';
-    pill.className = 'status-pill ' + (selesai ? 'status-selesai' : 'status-belum');
-    document.getElementById('rTanggal').textContent = entry.tanggal ? ('Terakhir diperiksa: ' + entry.tanggal) : '';
-
-    const kondisi = entry.kondisi || {};
-    document.getElementById('fKebersihan').value = kondisi.kebersihan || '-';
-    document.getElementById('fIndikator').value = kondisi.indikator || '-';
-    document.getElementById('fKunci').value = kondisi.kunci || '-';
-    document.getElementById('fSelang').value = kondisi.selang || '-';
-    document.getElementById('fNozzle').value = kondisi.nozzle || '-';
-    document.getElementById('fTag').value = kondisi.tag || '-';
-    document.getElementById('fEviden').value = kondisi.eviden || '-';
-    document.getElementById('fKeterangan').value = entry.keterangan || '';
-
-    currentFotoBase64 = entry.foto || null;
-    currentFotoName = entry.fotoName || '';
-    const thumb = document.getElementById('fotoThumb');
-    const fname = document.getElementById('fotoFileName');
-    if (currentFotoBase64) {
-      thumb.src = currentFotoBase64;
-      thumb.classList.add('show');
-      fname.textContent = currentFotoName || 'foto tersimpan';
-    } else {
-      thumb.classList.remove('show');
-      thumb.src = '';
-      fname.textContent = '';
-    }
-
-    cardResult.classList.remove('hidden');
-    cardResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  function cariKode(kode) {
-    const item = findByKode(kode);
-    if (!item) {
-      showToast('Kode "' + kode + '" tidak ditemukan di Data FSS & APAR', true);
-      cardResult.classList.add('hidden');
-      return;
-    }
-    fillForm(item);
-  }
-
-  document.getElementById('btnCari').addEventListener('click', () => {
-    const v = document.getElementById('manualKode').value.trim();
-    if (!v) { showToast('Isi kode terlebih dahulu', true); return; }
-    cariKode(v);
-  });
-  document.getElementById('manualKode').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') document.getElementById('btnCari').click();
-  });
-
-  // ===== Kamera Scan (html5-qrcode) =====
-  let html5QrCode = null;
-  let scanning = false;
-
-  document.getElementById('btnStartScan').addEventListener('click', async () => {
-    const msg = document.getElementById('qr-reader-msg');
-    try {
-      html5QrCode = new Html5Qrcode('qr-reader');
-      await html5QrCode.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
-        (decodedText) => {
-          document.getElementById('manualKode').value = decodedText;
-          cariKode(decodedText);
-          stopScan();
-        },
-        () => { /* silent scan-fail per frame */ }
-      );
-      scanning = true;
-      msg.textContent = 'Kamera aktif — arahkan ke QR/barcode alat.';
-      document.getElementById('btnStartScan').classList.add('hidden');
-      document.getElementById('btnStopScan').classList.remove('hidden');
-    } catch (err) {
-      msg.textContent = 'Gagal membuka kamera: ' + err + ' — gunakan input kode manual di bawah.';
-      showToast('Kamera tidak tersedia, gunakan input manual', true);
-    }
-  });
-
-  function stopScan() {
-    if (html5QrCode && scanning) {
-      html5QrCode.stop().then(() => {
-        html5QrCode.clear();
-        scanning = false;
-        document.getElementById('qr-reader-msg').textContent = 'Kamera dimatikan.';
-        document.getElementById('btnStartScan').classList.remove('hidden');
-        document.getElementById('btnStopScan').classList.add('hidden');
-      }).catch(() => {});
+// Hapus semua riwayat dari database bersama (atau lokal kalau offline)
+async function clearAllEntries() {
+  LOG = {};
+  saveLocalLog(LOG);
+  if (db) {
+    const snapshot = await db.collection(COLLECTION_NAME).get();
+    const batchSize = 400; // batas aman per batch Firestore
+    let ops = [];
+    snapshot.forEach(doc => ops.push(doc.ref));
+    for (let i = 0; i < ops.length; i += batchSize) {
+      const batch = db.batch();
+      ops.slice(i, i + batchSize).forEach(ref => batch.delete(ref));
+      await batch.commit();
     }
   }
-  document.getElementById('btnStopScan').addEventListener('click', stopScan);
+}
 
-  // ===== Upload Foto =====
-  const fotoInput = document.getElementById('fotoInput');
-  document.getElementById('btnUploadFoto').addEventListener('click', () => fotoInput.click());
-  fotoInput.addEventListener('change', () => {
-    const file = fotoInput.files[0];
-    if (!file) return;
-    currentFotoName = file.name;
+// Kompres foto sebelum disimpan supaya tidak kebesaran (batas dokumen
+// Firestore 1MB) dan biar irit kuota — resize max 1000px, JPEG quality 0.6
+function compressImage(file, maxDim = 1000, quality = 0.6) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
     const reader = new FileReader();
-    reader.onload = (e) => {
-      currentFotoBase64 = e.target.result;
-      const thumb = document.getElementById('fotoThumb');
-      thumb.src = currentFotoBase64;
-      thumb.classList.add('show');
-      document.getElementById('fotoFileName').textContent = currentFotoName;
+    reader.onload = () => { img.src = reader.result; };
+    reader.onerror = reject;
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height && width > maxDim) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+      else if (height > maxDim) { width = Math.round(width * (maxDim / height)); height = maxDim; }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
     };
+    img.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
 
-  // ===== Simpan =====
-  document.getElementById('btnSimpan').addEventListener('click', () => {
-    if (!currentItem) return;
-    const kondisi = {
-      kebersihan: document.getElementById('fKebersihan').value,
-      indikator: document.getElementById('fIndikator').value,
-      kunci: document.getElementById('fKunci').value,
-      selang: document.getElementById('fSelang').value,
-      nozzle: document.getElementById('fNozzle').value,
-      tag: document.getElementById('fTag').value,
-      eviden: document.getElementById('fEviden').value,
-    };
-    const entry = {
-      kondisi,
-      keterangan: document.getElementById('fKeterangan').value.trim(),
-      foto: currentFotoBase64,
-      fotoName: currentFotoName,
-      tanggal: formatTanggal(new Date()),
-    };
-    CHECKS[currentItem.kode] = entry;
-    saveChecks(CHECKS);
-    showToast('✅ Pemeriksaan kode ' + currentItem.kode + ' tersimpan');
-    fillForm(currentItem);
-  });
+/* ===========================================================
+   Status pesan
+   =========================================================== */
+const statusMsg = document.getElementById('statusMsg');
+function showStatus(msg, type) {
+  statusMsg.textContent = msg;
+  statusMsg.className = 'status ' + type;
+  setTimeout(() => { statusMsg.className = 'status'; }, 4000);
+}
 
-  document.getElementById('btnScanLagi').addEventListener('click', () => {
-    cardResult.classList.add('hidden');
-    currentItem = null;
-    currentFotoBase64 = null;
-    currentFotoName = '';
-    document.getElementById('manualKode').value = '';
-    document.getElementById('manualKode').focus();
-  });
+/* ===========================================================
+   Tabs
+   =========================================================== */
+const tabBtnScan = document.getElementById('tabBtnScan');
+const tabBtnRiwayat = document.getElementById('tabBtnRiwayat');
+const tabScan = document.getElementById('tabScan');
+const tabRiwayat = document.getElementById('tabRiwayat');
 
-  // ===== Log Table =====
-  function renderLogTable(filterText) {
-    const tbody = document.getElementById('logTbody');
-    tbody.innerHTML = '';
-    const term = (filterText || document.getElementById('searchLog').value || '').toLowerCase().trim();
+function goTab(name) {
+  const isScan = name === 'scan';
+  tabBtnScan.classList.toggle('active', isScan);
+  tabBtnRiwayat.classList.toggle('active', !isScan);
+  tabScan.classList.toggle('active', isScan);
+  tabRiwayat.classList.toggle('active', !isScan);
+  if (!isScan) { renderRiwayat(); renderProgress(); }
+}
+tabBtnScan.addEventListener('click', () => goTab('scan'));
+tabBtnRiwayat.addEventListener('click', () => goTab('riwayat'));
 
-    APAR_DATA.forEach((item, idx) => {
-      const entry = CHECKS[item.kode] || {};
-      const k = entry.kondisi || {};
-      const selesai = isSelesai(entry);
+/* ===========================================================
+   KONDISI — daftar item pemeriksaan (sesuai form Pemeliharaan APAR Bulanan)
+   =========================================================== */
+const KONDISI_ITEMS = [
+  { key: 'kebersihanTabung', label: 'Kebersihan Tabung APAR', good: 'Bersih', bad: 'Kotor' },
+  { key: 'indikatorTekanan', label: 'Pemeriksaan Indikator Tekanan', good: 'Hijau', bad: 'Merah' },
+  { key: 'kunciPengaman', label: 'Pemeriksaan Kunci Pengaman', good: 'Ada', bad: 'Tidak Ada' },
+  { key: 'selangSemprot', label: 'Pemeriksaan Selang Semprot', good: 'Tidak Pecah', bad: 'Pecah' },
+  { key: 'nozzle', label: 'Pemeriksaan Nozzle', good: 'Ada', bad: 'Tidak Ada' },
+  { key: 'tagLabel', label: 'TAG Label Pemeliharaan', good: 'Ada', bad: 'Tidak Ada' },
+];
 
-      if (term) {
-        const hay = [item.ruangan, item.gedung, item.kode].join(' ').toLowerCase();
-        if (!hay.includes(term)) return;
-      }
+let currentEntry = null; // entry sedang diisi di form scan
 
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td class="left">${item.ruangan || '-'}</td>
-        <td>${item.gedung || '-'}</td>
-        <td>${item.lantai || '-'}</td>
-        <td>${item.merk || '-'}</td>
-        <td>${item.kapasitas || '-'}</td>
-        <td>${item.jenisGas || '-'}</td>
-        <td>${item.kode}</td>
-        <td>${item.kode}</td>
-        <td>${k.kebersihan || '-'}</td>
-        <td>${k.indikator || '-'}</td>
-        <td>${k.kunci || '-'}</td>
-        <td>${k.selang || '-'}</td>
-        <td>${k.nozzle || '-'}</td>
-        <td>${k.tag || '-'}</td>
-        <td>${k.eviden || '-'}</td>
-        <td class="left">${entry.keterangan || ''}</td>
-        <td>${entry.foto ? '📷 Ada' : ''}</td>
-        <td>${entry.tanggal || '-'}</td>
-        <td class="status-cell ${selesai ? 'selesai' : 'belum'}">${selesai ? '✅ Selesai' : 'Belum'}</td>
-      `;
-      tbody.appendChild(tr);
+function renderKondisiForm() {
+  const wrap = document.getElementById('kondisiList');
+  wrap.innerHTML = KONDISI_ITEMS.map(item => `
+    <div class="kondisi-item">
+      <div class="label">${item.label}</div>
+      <div class="toggle2">
+        <button type="button" data-key="${item.key}" data-val="good">${item.good}</button>
+        <button type="button" data-key="${item.key}" data-val="bad">${item.bad}</button>
+      </div>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.key;
+      const val = btn.dataset.val;
+      currentEntry[key] = (currentEntry[key] === val) ? null : val;
+      refreshKondisiButtons();
     });
-  }
-  document.getElementById('searchLog').addEventListener('input', (e) => renderLogTable(e.target.value));
-
-  // ===== Progress =====
-  function updateProgress() {
-    const total = APAR_DATA.length;
-    const done = APAR_DATA.filter(item => isSelesai(CHECKS[item.kode])).length;
-    const pct = total ? Math.round((done / total) * 100) : 0;
-    document.getElementById('progressFill').style.width = pct + '%';
-    const label = document.getElementById('progressLabel');
-    if (done >= total && total > 0) {
-      label.textContent = '✅ Done All — ' + done + ' dari ' + total + ' tugas selesai';
-      label.classList.add('done');
-    } else {
-      label.textContent = done + ' dari ' + total + ' tugas selesai';
-      label.classList.remove('done');
-    }
-  }
-
-  // ===== Reset =====
-  document.getElementById('btnReset').addEventListener('click', () => {
-    if (!confirm('Yakin hapus SEMUA data pemeriksaan yang tersimpan di perangkat ini?')) return;
-    CHECKS = {};
-    saveChecks(CHECKS);
-    renderLogTable();
-    updateProgress();
-    showToast('Semua data pemeriksaan direset');
   });
+  refreshKondisiButtons();
+}
 
-  // ===== Download Excel =====
-  document.getElementById('btnDownload').addEventListener('click', async () => {
-    const btn = document.getElementById('btnDownload');
-    const hint = document.getElementById('downloadHint');
-    btn.disabled = true;
-    hint.textContent = 'Membuat file Excel...';
-    try {
-      const workbook = new ExcelJS.Workbook();
-      const ws = workbook.addWorksheet('DATA FSS & APAR');
+function refreshKondisiButtons() {
+  document.querySelectorAll('#kondisiList button').forEach(btn => {
+    const key = btn.dataset.key;
+    const val = btn.dataset.val;
+    btn.classList.remove('on-good', 'on-bad');
+    if (currentEntry[key] === val) {
+      btn.classList.add(val === 'good' ? 'on-good' : 'on-bad');
+    }
+  });
+}
 
-      const headers1 = ['No','RUANGAN','GEDUNG','LANTAI','MERK','KAPASITAS','JENIS GAS','kode','QRkode','KONDISI','','','','','','','KETERANGAN','FOTO','TANGGAL PERIKSA','STATUS TUGAS'];
-      const headers2 = ['','','','','','','','','', 'Kebersihan Tabung APAR','Pemeriksaan Indikator Tekanan','Pemeriksaan    Kunci Pengaman','Pemeriksaan Selang Semprot','Pemeriksaan Nozzle','TAG Label Pemeliharaan','EVIDEN','','','',''];
+/* ===========================================================
+   Upload foto (EVIDEN / KETERANGAN)
+   =========================================================== */
+const fotoInput = document.getElementById('fotoInput');
+const fotoPreview = document.getElementById('fotoPreview');
+const btnUploadFoto = document.getElementById('btnUploadFoto');
+const btnHapusFoto = document.getElementById('btnHapusFoto');
 
-      ws.addRow(headers1);
-      ws.addRow(headers2);
+btnUploadFoto.addEventListener('click', () => fotoInput.click());
 
-      const mergeCols = ['A','B','C','D','E','F','G','H','I','Q','R','S','T'];
-      mergeCols.forEach(c => ws.mergeCells(`${c}1:${c}2`));
-      ws.mergeCells('J1:P1');
+fotoInput.addEventListener('change', async () => {
+  const file = fotoInput.files[0];
+  if (!file) return;
+  try {
+    btnUploadFoto.disabled = true;
+    btnUploadFoto.textContent = '⏳ Memproses foto...';
+    currentEntry.foto = await compressImage(file);
+    fotoPreview.src = currentEntry.foto;
+    fotoPreview.classList.add('show');
+    btnHapusFoto.classList.remove('hidden');
+  } catch (e) {
+    console.error(e);
+    showStatus('Gagal memproses foto, coba lagi.', 'err');
+  } finally {
+    btnUploadFoto.disabled = false;
+    btnUploadFoto.textContent = '📷 Upload Foto';
+  }
+});
 
-      [1,2].forEach(r => {
-        ws.getRow(r).eachCell(cell => {
-          cell.font = { bold: true, name: 'Arial', size: 10 };
-          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
-          cell.border = { top:{style:'thin'}, left:{style:'thin'}, bottom:{style:'thin'}, right:{style:'thin'} };
-        });
+btnHapusFoto.addEventListener('click', () => {
+  currentEntry.foto = null;
+  fotoPreview.src = '';
+  fotoPreview.classList.remove('show');
+  btnHapusFoto.classList.add('hidden');
+  fotoInput.value = '';
+});
+
+/* ===========================================================
+   Tampilkan hasil lookup + siapkan form checklist
+   =========================================================== */
+const resultCard = document.getElementById('resultCard');
+const resultKode = document.getElementById('resultKode');
+const resultStatusBadge = document.getElementById('resultStatusBadge');
+const resultTitle = document.getElementById('resultTitle');
+const resultList = document.getElementById('resultList');
+const keteranganInput = document.getElementById('keteranganInput');
+
+const FIELD_LABELS = [
+  ['gedung', 'Gedung'],
+  ['lantai', 'Lantai'],
+  ['merk', 'Merk'],
+  ['kapasitas', 'Kapasitas'],
+  ['jenisGas', 'Jenis Gas'],
+  ['no', 'No. Data'],
+];
+
+function tampilkanData(kode) {
+  const data = DATA_BY_KODE[kode];
+  if (!data) {
+    resultCard.classList.add('hidden');
+    showStatus(`Kode "${kode}" tidak ditemukan di data FSS/APAR.`, 'err');
+    return;
+  }
+
+  const existing = LOG[data.id];
+  currentEntry = existing ? { ...existing } : {
+    id: data.id, kode: data.kode,
+    kebersihanTabung: null, indikatorTekanan: null, kunciPengaman: null,
+    selangSemprot: null, nozzle: null, tagLabel: null,
+    keterangan: '', foto: null, tanggal: null,
+  };
+
+  resultKode.textContent = 'Kode: ' + data.kode;
+  resultStatusBadge.textContent = existing ? '✅ Sudah Diperiksa' : '🆕 Belum Diperiksa';
+  resultStatusBadge.style.background = existing ? '#14532d' : '#334155';
+  resultStatusBadge.style.color = existing ? '#4ade80' : '#94a3b8';
+
+  resultTitle.textContent = data.ruangan || '-';
+  resultList.innerHTML = FIELD_LABELS.map(([key, label]) => {
+    const val = data[key];
+    return `<div class="row"><dt>${label}</dt><dd>${(val === null || val === undefined || val === '') ? '-' : val}</dd></div>`;
+  }).join('');
+
+  renderKondisiForm();
+  keteranganInput.value = currentEntry.keterangan || '';
+  if (currentEntry.foto) {
+    fotoPreview.src = currentEntry.foto;
+    fotoPreview.classList.add('show');
+    btnHapusFoto.classList.remove('hidden');
+  } else {
+    fotoPreview.src = '';
+    fotoPreview.classList.remove('show');
+    btnHapusFoto.classList.add('hidden');
+  }
+  fotoInput.value = '';
+
+  resultCard.classList.remove('hidden');
+  showStatus(existing ? 'Data ditemukan — hasil sebelumnya dimuat, silakan perbarui bila perlu ✅' : 'Data alat ditemukan, silakan isi checklist KONDISI ✅', 'ok');
+}
+
+document.getElementById('btnSimpan').addEventListener('click', async () => {
+  if (!currentEntry) return;
+  const btnSimpan = document.getElementById('btnSimpan');
+  currentEntry.keterangan = keteranganInput.value.trim();
+  currentEntry.tanggal = new Date().toISOString();
+
+  btnSimpan.disabled = true;
+  btnSimpan.textContent = '⏳ Menyimpan...';
+  try {
+    await persistEntry({ ...currentEntry });
+    showStatus(db ? 'Hasil pemeriksaan tersimpan & tersinkron ke database bersama ✅' : 'Hasil pemeriksaan tersimpan di HP ini ✅', 'ok');
+    resultStatusBadge.textContent = '✅ Sudah Diperiksa';
+    resultStatusBadge.style.background = '#14532d';
+    resultStatusBadge.style.color = '#4ade80';
+    renderRiwayat();
+    renderProgress();
+  } finally {
+    btnSimpan.disabled = false;
+    btnSimpan.textContent = '✅ Simpan Hasil Pemeriksaan';
+  }
+});
+
+document.getElementById('btnCariManual').addEventListener('click', () => {
+  const kode = document.getElementById('manualKode').value.trim();
+  if (kode) tampilkanData(kode);
+});
+document.getElementById('manualKode').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btnCariManual').click();
+});
+
+/* ===========================================================
+   QR Scanner
+   -----------------------------------------------------------
+   Bug lama: kamera kadang gagal restart setelah "Scan Lagi",
+   satu kode kadang kebaca 2x (double-fire) karena start()
+   dipanggil lagi sebelum stop() sebelumnya selesai, dan scanner
+   tetap jalan di background walau pindah tab Riwayat (boros
+   baterai & kadang bikin state kacau). Semua itu diperbaiki di
+   bawah dengan: lock anti-tumpang-tindih, guard pakai getState(),
+   auto-stop saat pindah tab, dan debounce hasil scan yang sama.
+   =========================================================== */
+let html5QrCode = null;
+let isTransitioning = false; // lock: sedang proses start/stop
+let lastScanned = null;
+let lastScanTime = 0;
+const readerDiv = document.getElementById('reader');
+const btnStart = document.getElementById('btnStart');
+
+function scannerIsRunning() {
+  return html5QrCode && html5QrCode.getState() === Html5QrcodeScannerState.SCANNING;
+}
+
+async function startScanner() {
+  if (isTransitioning || scannerIsRunning()) return;
+  isTransitioning = true;
+  btnStart.disabled = true;
+  btnStart.textContent = '⏳ Membuka kamera...';
+  resultCard.classList.add('hidden');
+  readerDiv.classList.remove('hidden');
+  readerDiv.innerHTML = '';
+
+  try {
+    if (!html5QrCode) html5QrCode = new Html5Qrcode("reader", { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
+    const config = { fps: 10, qrbox: { width: 250, height: 250 }, disableFlip: false };
+
+    await html5QrCode.start(
+      { facingMode: "environment" },
+      config,
+      onScanSuccess,
+      () => {} // abaikan error "QR tidak ditemukan" per-frame, itu normal
+    );
+    btnStart.textContent = 'Mulai Scan QR';
+  } catch (err) {
+    console.error('Gagal membuka kamera:', err);
+    let pesan = 'Gagal membuka kamera.';
+    const errStr = String(err && err.name || err);
+    if (errStr.includes('NotAllowedError')) pesan = 'Akses kamera ditolak. Izinkan kamera di pengaturan browser lalu coba lagi.';
+    else if (errStr.includes('NotFoundError')) pesan = 'Kamera tidak ditemukan di perangkat ini.';
+    else if (errStr.includes('NotReadableError')) pesan = 'Kamera sedang dipakai aplikasi lain. Tutup aplikasi lain lalu coba lagi.';
+    showStatus(pesan, 'err');
+    readerDiv.classList.add('hidden');
+    btnStart.textContent = 'Mulai Scan QR';
+  } finally {
+    btnStart.disabled = false;
+    isTransitioning = false;
+  }
+}
+
+async function stopScanner() {
+  if (isTransitioning) return;
+  if (!scannerIsRunning()) { readerDiv.classList.add('hidden'); return; }
+  isTransitioning = true;
+  try {
+    await html5QrCode.stop();
+    html5QrCode.clear();
+  } catch (e) {
+    console.warn('stopScanner:', e);
+  } finally {
+    readerDiv.classList.add('hidden');
+    btnStart.disabled = false;
+    isTransitioning = false;
+  }
+}
+
+async function onScanSuccess(decodedText) {
+  const kode = decodedText.trim();
+  const now = Date.now();
+  // Debounce: abaikan hasil scan yang sama persis dalam 2 detik terakhir
+  // (kamera bisa membaca QR yang sama beberapa kali per detik).
+  if (kode === lastScanned && now - lastScanTime < 2000) return;
+  lastScanned = kode;
+  lastScanTime = now;
+
+  await stopScanner();
+  tampilkanData(kode);
+}
+
+btnStart.addEventListener('click', startScanner);
+
+document.getElementById('btnScanLagi').addEventListener('click', async () => {
+  resultCard.classList.add('hidden');
+  lastScanned = null; // izinkan scan ulang kode yang sama
+  await startScanner();
+});
+
+// Stop kamera otomatis kalau pindah ke tab Riwayat, biar tidak jalan
+// terus di background (hemat baterai & mencegah state kacau).
+const _origGoTab = goTab;
+goTab = function (name) {
+  if (name !== 'scan') stopScanner();
+  _origGoTab(name);
+};
+
+// Stop kamera kalau tab browser di-minimize/app dipindah ke background,
+// supaya saat kembali tidak error "kamera masih dipakai".
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopScanner();
+});
+
+/* ===========================================================
+   RIWAYAT — daftar hasil pemeriksaan yang sudah diisi (tab di atas)
+   =========================================================== */
+function renderRiwayat() {
+  const q = (document.getElementById('searchRiwayat').value || '').toLowerCase();
+  const logList = document.getElementById('logList');
+
+  const entries = APAR_DATA
+    .filter(r => LOG[r.id])
+    .map(r => ({ data: r, entry: LOG[r.id] }))
+    .filter(({ data }) => {
+      if (!q) return true;
+      return String(data.kode).toLowerCase().includes(q)
+        || (data.ruangan || '').toLowerCase().includes(q)
+        || (data.gedung || '').toLowerCase().includes(q);
+    })
+    .sort((a, b) => new Date(b.entry.tanggal) - new Date(a.entry.tanggal));
+
+  if (!entries.length) {
+    logList.innerHTML = `<div class="empty-state">Belum ada riwayat pemeriksaan. Scan QR alat di tab Scan untuk mulai mengisi ✅</div>`;
+    return;
+  }
+
+  logList.innerHTML = entries.map(({ data, entry }) => {
+    const tgl = entry.tanggal ? new Date(entry.tanggal).toLocaleString('id-ID') : '-';
+    const eviden = entry.foto ? 'Ada' : 'Tidak Ada';
+    const fotoHtml = entry.foto ? `<img class="log-foto" src="${entry.foto}" alt="Bukti foto">` : '';
+    const ket = entry.keterangan ? `<div class="log-ket">📝 ${escapeHtml(entry.keterangan)}</div>` : '';
+    return `
+      <div class="log-item">
+        <div class="log-head">
+          <span class="log-kode">Kode ${data.kode}</span>
+          <span class="log-check">✅</span>
+        </div>
+        <div class="log-ruangan">${data.ruangan || '-'} — ${data.gedung || '-'}${data.lantai ? ' LT.' + data.lantai : ''}</div>
+        <div class="log-meta">${data.merk || ''} · ${data.kapasitas || ''} · ${data.jenisGas || ''} · Diperiksa: ${tgl} · EVIDEN: ${eviden}</div>
+        ${ket}
+        ${fotoHtml}
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+document.getElementById('searchRiwayat').addEventListener('input', renderRiwayat);
+
+/* ===========================================================
+   PROGRES TUGAS — berapa dari total kode yang sudah selesai
+   =========================================================== */
+function renderProgress() {
+  const done = APAR_DATA.filter(r => r.kode && LOG[r.id]).length;
+  const pct = TOTAL_TUGAS ? Math.round((done / TOTAL_TUGAS) * 100) : 0;
+
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = `${done} / ${TOTAL_TUGAS} selesai`;
+  document.getElementById('progressPct').textContent = pct + '%';
+
+  const doneAllLabel = document.getElementById('doneAllLabel');
+  if (TOTAL_TUGAS > 0 && done >= TOTAL_TUGAS) {
+    doneAllLabel.classList.remove('hidden');
+    doneAllLabel.textContent = '🎉 Done All — Semua Tugas Selesai!';
+  } else {
+    doneAllLabel.classList.add('hidden');
+  }
+}
+
+document.getElementById('btnResetLog').addEventListener('click', async () => {
+  const pesan = db
+    ? 'Hapus SEMUA riwayat pemeriksaan untuk SEMUA orang (database bersama)? Tindakan ini tidak bisa dibatalkan.'
+    : 'Hapus semua riwayat pemeriksaan di perangkat ini? Tindakan ini tidak bisa dibatalkan.';
+  if (!confirm(pesan)) return;
+  const btn = document.getElementById('btnResetLog');
+  btn.disabled = true;
+  btn.textContent = '⏳ Menghapus...';
+  try {
+    await clearAllEntries();
+    renderRiwayat();
+    renderProgress();
+    showStatus('Semua riwayat telah dihapus.', 'info');
+  } catch (e) {
+    console.error(e);
+    showStatus('Gagal menghapus riwayat: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🗑️ Reset Semua Riwayat';
+  }
+});
+
+/* ===========================================================
+   DOWNLOAD EXCEL — Data FSS & APAR + kolom QRkode/KONDISI/KETERANGAN/foto
+   =========================================================== */
+document.getElementById('btnDownload').addEventListener('click', async () => {
+  const btn = document.getElementById('btnDownload');
+  btn.disabled = true;
+  btn.textContent = 'Menyiapkan file...';
+  try {
+    await downloadExcel();
+    showStatus('File Excel berhasil dibuat ✅', 'ok');
+  } catch (e) {
+    console.error(e);
+    showStatus('Gagal membuat file Excel: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⬇️ Download Excel (DATA FSS & APAR)';
+  }
+});
+
+async function downloadExcel() {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Scan QR APAR App';
+  wb.created = new Date();
+  const ws = wb.addWorksheet('DATA FSS & APAR');
+
+  const headerRow1 = [
+    'No', 'RUANGAN', 'GEDUNG', 'LANTAI', 'MERK', 'KAPASITAS', 'JENIS GAS', 'kode', 'QRkode',
+    'KONDISI', '', '', '', '', '', '',
+    'KETERANGAN', 'FOTO', 'TANGGAL PERIKSA', 'STATUS TUGAS'
+  ];
+  const headerRow2 = [
+    '', '', '', '', '', '', '', '', '',
+    'Kebersihan Tabung APAR', 'Pemeriksaan Indikator Tekanan', 'Pemeriksaan Kunci Pengaman',
+    'Pemeriksaan Selang Semprot', 'Pemeriksaan Nozzle', 'TAG Label Pemeliharaan', 'EVIDEN',
+    '', '', '', ''
+  ];
+
+  ws.addRow(headerRow1);
+  ws.addRow(headerRow2);
+
+  // Merge single-column headers vertically (row1:row2), and KONDISI across J1:P1
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'Q', 'R', 'S', 'T'].forEach(col => {
+    ws.mergeCells(`${col}1:${col}2`);
+  });
+  ws.mergeCells('J1:P1');
+
+  [1, 2].forEach(r => {
+    ws.getRow(r).eachCell(cell => {
+      cell.font = { bold: true, size: 10 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+      cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    });
+  });
+  ws.getRow(1).height = 18;
+  ws.getRow(2).height = 34;
+
+  ws.columns = [
+    { width: 5 }, { width: 24 }, { width: 12 }, { width: 8 }, { width: 12 }, { width: 10 }, { width: 16 },
+    { width: 8 }, { width: 10 },
+    { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 10 },
+    { width: 26 }, { width: 14 }, { width: 16 }, { width: 14 },
+  ];
+
+  let rowIndex = 3;
+  for (const data of APAR_DATA) {
+    const entry = LOG[data.id];
+    const status = entry ? '✅ Selesai' : (data.kode ? 'Belum' : '-');
+    const tgl = entry && entry.tanggal ? new Date(entry.tanggal).toLocaleString('id-ID') : '-';
+
+    const row = ws.addRow([
+      data.no ?? '',
+      data.ruangan ?? '',
+      data.gedung ?? '',
+      data.lantai ?? '',
+      data.merk ?? '',
+      data.kapasitas ?? '',
+      data.jenisGas ?? '',
+      data.kode ?? '',
+      data.kode ?? '', // QRkode = isi kode yang sama dipakai untuk QR (menggantikan #VALUE!)
+      entry ? (entry.kebersihanTabung === 'good' ? 'Bersih' : entry.kebersihanTabung === 'bad' ? 'Kotor' : '-') : '-',
+      entry ? (entry.indikatorTekanan === 'good' ? 'Hijau' : entry.indikatorTekanan === 'bad' ? 'Merah' : '-') : '-',
+      entry ? (entry.kunciPengaman === 'good' ? 'Ada' : entry.kunciPengaman === 'bad' ? 'Tidak Ada' : '-') : '-',
+      entry ? (entry.selangSemprot === 'good' ? 'Tidak Pecah' : entry.selangSemprot === 'bad' ? 'Pecah' : '-') : '-',
+      entry ? (entry.nozzle === 'good' ? 'Ada' : entry.nozzle === 'bad' ? 'Tidak Ada' : '-') : '-',
+      entry ? (entry.tagLabel === 'good' ? 'Ada' : entry.tagLabel === 'bad' ? 'Tidak Ada' : '-') : '-',
+      entry ? (entry.foto ? 'Ada' : 'Tidak Ada') : '-',
+      entry && entry.keterangan ? entry.keterangan : '',
+      '', // kolom Foto diisi gambar (di bawah), teks dikosongkan
+      tgl,
+      status,
+    ]);
+    row.eachCell(cell => { cell.alignment = { vertical: 'middle', wrapText: true, horizontal: 'center' }; cell.font = { size: 9 }; });
+    row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }; // ruangan rata kiri
+    row.getCell(17).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }; // keterangan rata kiri
+
+    if (entry && entry.foto) {
+      row.height = 70;
+      const match = /^data:image\/(png|jpe?g);base64,/.exec(entry.foto);
+      const ext = match ? (match[1] === 'jpg' ? 'jpeg' : match[1]) : 'jpeg';
+      const base64 = entry.foto.split(',')[1];
+      const imgId = wb.addImage({ base64, extension: ext });
+      ws.addImage(imgId, {
+        tl: { col: 17, row: rowIndex - 1 },
+        ext: { width: 90, height: 90 },
       });
-
-      const colWidths = [5,26,12,8,10,10,20,8,9,14,16,16,16,14,16,10,26,12,18,14];
-      colWidths.forEach((w, i) => { ws.getColumn(i+1).width = w; });
-
-      let rowIdx = 3;
-      for (let i = 0; i < APAR_DATA.length; i++) {
-        const item = APAR_DATA[i];
-        const entry = CHECKS[item.kode] || {};
-        const k = entry.kondisi || {};
-        const selesai = isSelesai(entry);
-
-        const row = ws.addRow([
-          i + 1,
-          item.ruangan || '',
-          item.gedung || '',
-          item.lantai || '',
-          item.merk || '',
-          item.kapasitas || '',
-          item.jenisGas || '',
-          item.kode,
-          item.kode,
-          k.kebersihan || '-',
-          k.indikator || '-',
-          k.kunci || '-',
-          k.selang || '-',
-          k.nozzle || '-',
-          k.tag || '-',
-          k.eviden || '-',
-          entry.keterangan || '',
-          '',
-          entry.tanggal || '-',
-          selesai ? '✅ Selesai' : 'Belum',
-        ]);
-        row.eachCell(cell => {
-          cell.font = { name: 'Arial', size: 10 };
-          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-          cell.border = { top:{style:'thin'}, left:{style:'thin'}, bottom:{style:'thin'}, right:{style:'thin'} };
-        });
-        row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-        row.getCell(17).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-
-        // Sisipkan foto (jika ada) di kolom FOTO (R = kolom 18)
-        if (entry.foto) {
-          try {
-            const match = entry.foto.match(/^data:image\/(png|jpeg|jpg);base64,/);
-            const ext = match ? (match[1] === 'jpg' ? 'jpeg' : match[1]) : 'jpeg';
-            const base64Data = entry.foto.split(',')[1];
-            const imgId = workbook.addImage({ base64: base64Data, extension: ext });
-            ws.addImage(imgId, {
-              tl: { col: 17.05, row: rowIdx - 1 + 0.05 },
-              ext: { width: 60, height: 60 },
-            });
-            row.height = 46;
-          } catch (e) { /* lewati jika gagal embed foto */ }
-        }
-        rowIdx++;
-      }
-
-      ws.views = [{ state: 'frozen', ySplit: 2 }];
-
-      const buf = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buf], { type: 'application/octet-stream' });
-      const tgl = new Date().toISOString().slice(0,10);
-      saveAs(blob, `DATA_FSS_APAR_${tgl}.xlsx`);
-      hint.textContent = 'File berhasil diunduh.';
-    } catch (err) {
-      hint.textContent = 'Gagal membuat file: ' + err;
-      showToast('Gagal membuat file Excel', true);
-    } finally {
-      btn.disabled = false;
     }
-  });
+    rowIndex++;
+  }
 
-  // ===== Init =====
-  renderLogTable();
-  updateProgress();
+  ws.views = [{ state: 'frozen', ySplit: 2 }];
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `DATA_FSS_APAR_${stamp}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ===========================================================
+   Init
+   =========================================================== */
+renderRiwayat();
+renderProgress();
+initFirebase();
 </script>
 
 </body>
