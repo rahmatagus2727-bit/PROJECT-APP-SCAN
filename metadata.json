@@ -1,0 +1,10 @@
+{
+  "name": "Scan QR APAR",
+  "description": "Aplikasi scan QR APAR & FSS untuk pemeliharaan dan inspeksi bulanan.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

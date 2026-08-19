@@ -2,137 +2,328 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-<title>Scan QR APAR — Pemeliharaan Bulanan</title> 
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
+<title>Scan QR APAR &amp; FSS — Pemeliharaan Bulanan</title>
 <link rel="stylesheet" href="style.css" />
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script src="data.js"></script>
 </head>
 <body>
 
-<div class="card">
-  <h1>📷 Scan QR APAR / FSS — Pemeliharaan Bulanan</h1>
-  <div class="hint">Arahkan kamera ke QR yang tertempel di alat. Data alat otomatis muncul dari Data FSS &amp; APAR, langsung diisi checklist KONDISI &amp; KETERANGAN seperti form Pemeliharaan APAR Bulanan.</div>
-  <div id="dbStatus" class="db-status db-offline">⏳ Menyiapkan database...</div>
-</div>
+<div class="app-container">
 
-<div class="tabbar">
-  <button id="tabBtnScan" class="active">📷 Scan</button>
-  <button id="tabBtnRiwayat">📋 Riwayat &amp; Rekap</button>
-</div>
+  <!-- ======================= STATUS MESSAGE TOAST ======================= -->
+  <div id="statusMsg" class="status"></div>
 
-<div id="statusMsg" class="status"></div>
-
-<!-- ======================= TAB: SCAN ======================= -->
-<div id="tabScan" class="tabpanel active">
-
-  <div class="card">
-    <h2>Scan QR Alat</h2>
-    <button id="btnStart">Mulai Scan QR</button>
-    <div id="reader" class="hidden"></div>
-
-    <label for="manualKode">Atau ketik kode alat manual</label>
-    <div style="display:flex; gap:8px;">
-      <input type="text" id="manualKode" placeholder="Contoh: 110" inputmode="numeric" />
-      <button id="btnCariManual" class="secondary small" style="width:auto;">Cari</button>
-    </div>
-    <div class="hint" style="margin-top:10px;"><a class="nav" href="generate.html">🏷️ Cetak / buat QR kode alat di sini</a></div>
-  </div>
-
-  <div class="card hidden" id="resultCard">
-    <span class="result-kode" id="resultKode">Kode</span>
-    <span class="result-kode" id="resultStatusBadge" style="background:#334155;color:#94a3b8;"></span>
-    <div class="result-title" id="resultTitle">Ruangan</div>
-    <dl class="result-list" id="resultList"></dl>
-
-    <h3>KONDISI</h3>
-    <div id="kondisiList"></div>
-
-    <h3>KETERANGAN</h3>
-    <textarea id="keteranganInput" placeholder="Catatan pemeriksaan (opsional)"></textarea>
-
-    <div class="foto-upload">
-      <label>Bukti Foto (EVIDEN)</label>
-      <div class="foto-btn-row">
-        <button id="btnUploadFoto" class="secondary small" style="flex:1;">📷 Upload Foto</button>
-        <button id="btnHapusFoto" class="ghost small hidden" style="flex:1;">🗑️ Hapus Foto</button>
+  <!-- ======================= AUTH / LOGIN SCREEN ======================= -->
+  <div id="authScreen" class="auth-wrapper">
+    <div class="card">
+      <div class="auth-header">
+        <div class="auth-logo">🧯</div>
+        <h1>Portal Petugas APAR</h1>
+        <p>Silakan masuk atau buat akun petugas untuk memulai pemeriksaan &amp; sinkronisasi data.</p>
       </div>
-      <input type="file" id="fotoInput" accept="image/*" capture="environment" class="hidden" />
-      <img id="fotoPreview" class="foto-preview" alt="Preview bukti foto" />
-    </div>
 
-    <button id="btnSimpan">✅ Simpan Hasil Pemeriksaan</button>
-    <button id="btnScanLagi" class="secondary">Scan Lagi</button>
+      <div class="auth-tabs">
+        <button type="button" id="tabAuthLogin" class="auth-tab-btn active">Masuk (Login)</button>
+        <button type="button" id="tabAuthRegister" class="auth-tab-btn">Daftar Akun</button>
+      </div>
+
+      <form id="authForm">
+        <div id="regNameGroup" class="hidden">
+          <label for="authName">Nama Lengkap Petugas</label>
+          <input type="text" id="authName" placeholder="Contoh: Rahmat Agus" autocomplete="name" />
+        </div>
+
+        <label for="authEmail">Email Petugas</label>
+        <input type="email" id="authEmail" placeholder="petugas@apar.id" required autocomplete="email" />
+
+        <label for="authPassword">Kata Sandi (Password)</label>
+        <div class="password-wrapper">
+          <input type="password" id="authPassword" placeholder="Minimal 6 karakter" required autocomplete="current-password" />
+          <button type="button" id="btnTogglePassword" class="password-toggle-btn" title="Lihat password">👁️</button>
+        </div>
+
+        <button type="submit" id="btnAuthSubmit">🔑 Masuk ke Aplikasi</button>
+      </form>
+
+      <div class="auth-divider"><span>ATAU</span></div>
+
+      <button type="button" id="btnGuestLogin" class="ghost">
+        ⚡ Masuk Cepat (Mode Lapangan / Tamu)
+      </button>
+      <p class="hint" style="text-align: center; margin-top: 10px;">
+        Mode Lapangan memungkinkan inspeksi langsung dan tersimpan di memori perangkat / cloud saat terhubung.
+      </p>
+    </div>
   </div>
 
-</div>
+  <!-- ======================= MAIN DASHBOARD SCREEN ======================= -->
+  <div id="mainScreen" class="hidden">
+    
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="header-icon">🧯</div>
+        <div class="header-title-group">
+          <h1>Inspeksi QR APAR / FSS</h1>
+          <p>Sistem Pemeliharaan &amp; Checklist Bulanan Real-Time</p>
+        </div>
+      </div>
 
-<!-- ======================= TAB: RIWAYAT ======================= -->
-<div id="tabRiwayat" class="tabpanel">
+      <div class="header-actions">
+        <div id="dbStatus" class="db-status-pill db-connecting">
+          <span>🔄</span> <span id="dbStatusText">Menyambungkan...</span>
+        </div>
 
-  <div class="card">
-    <h2>Riwayat Pemeriksaan (sudah discan/diisi)</h2>
-    <div class="search-row">
-      <input type="text" id="searchRiwayat" placeholder="Cari kode / ruangan / gedung..." />
+        <div class="user-profile-badge" id="userProfileBadge">
+          <div class="user-avatar" id="userAvatar">P</div>
+          <span class="user-name-text" id="userNameText">Petugas</span>
+          <button type="button" class="btn-logout" id="btnLogout" title="Keluar dari akun">Keluar</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Quick Stats Bento Grid -->
+    <div class="stats-grid">
+      <div class="stat-box primary">
+        <span class="stat-label">Total APAR Berkode</span>
+        <span class="stat-value" id="statTotalAlat">0</span>
+      </div>
+      <div class="stat-box success">
+        <span class="stat-label">Sudah Diperiksa</span>
+        <span class="stat-value" id="statSudahPeriksa">0</span>
+      </div>
+      <div class="stat-box warning">
+        <span class="stat-label">Belum Diperiksa</span>
+        <span class="stat-value" id="statBelumPeriksa">0</span>
+      </div>
+      <div class="stat-box success">
+        <span class="stat-label">Persentase Progres</span>
+        <span class="stat-value" id="statPersentase">0%</span>
+      </div>
     </div>
-    <div id="logList"></div>
-  </div>
 
-  <div class="card">
-    <h2>Progres Tugas</h2>
-    <div class="progress-wrap">
-      <div class="progress-bar-track"><div class="progress-bar-fill" id="progressFill"></div></div>
-      <div class="progress-label"><span id="progressText">0 / 0 selesai</span><span id="progressPct">0%</span></div>
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabbar">
+      <button type="button" id="tabBtnScan" class="nav-tab-btn active">
+        <span>📷</span> Scan &amp; Isi Checklist
+      </button>
+      <button type="button" id="tabBtnRiwayat" class="nav-tab-btn">
+        <span>📋</span> Riwayat &amp; Rekap (<span id="tabBadgeCount">0</span>)
+      </button>
+    </nav>
+
+    <!-- ======================= TAB 1: SCAN & CHECKLIST ======================= -->
+    <div id="tabScan" class="tabpanel active" style="margin-top: 16px;">
+      <div class="scan-grid-layout">
+        
+        <!-- Left Box: Scanner & Manual Lookup -->
+        <div class="card">
+          <h2><span>🔍</span> Scan Barcode / QR Alat</h2>
+          <p class="hint">Arahkan kamera ke stiker QR APAR. Data otomatis muncul dan siap diisi checklist kondisi fisik.</p>
+          
+          <button type="button" id="btnStart">📷 Buka Kamera Scan QR</button>
+          <div id="reader" class="hidden"></div>
+
+          <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+            <label for="manualKode">Atau Ketik Kode Alat Manual</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="manualKode" placeholder="Contoh: 110" inputmode="numeric" />
+              <button type="button" id="btnCariManual" class="secondary small" style="width: auto; min-width: 80px;">Cari</button>
+            </div>
+          </div>
+
+          <div class="hint" style="margin-top: 16px; display: flex; align-items: center; gap: 6px;">
+            <span>🏷️</span>
+            <a class="nav-link" href="generate.html">Buka Halaman Cetak / Buat QR Kode Alat</a>
+          </div>
+        </div>
+
+        <!-- Right Box: Inspection Checklist Form -->
+        <div class="card hidden" id="resultCard">
+          <div class="result-header">
+            <span class="result-kode-badge" id="resultKode">Kode: -</span>
+            <span class="result-status-badge" id="resultStatusBadge" style="background:#334155;color:#94a3b8;">Belum Diperiksa</span>
+          </div>
+
+          <div class="result-title" id="resultTitle">Nama Ruangan</div>
+          <dl class="result-list" id="resultList"></dl>
+
+          <h3>📋 KONDISI FISIK APAR</h3>
+          <div id="kondisiList"></div>
+
+          <h3>📝 CATATAN / KETERANGAN</h3>
+          <textarea id="keteranganInput" placeholder="Tuliskan catatan hasil pemeriksaan atau temuan khusus (opsional)"></textarea>
+
+          <div class="foto-upload-box">
+            <label style="margin-top: 0;">📷 Bukti Foto (EVIDEN)</label>
+            <div class="foto-btn-row">
+              <button type="button" id="btnUploadFoto" class="secondary small" style="flex:1;">📷 Ambil / Upload Foto</button>
+              <button type="button" id="btnHapusFoto" class="danger small hidden" style="flex:1;">🗑️ Hapus Foto</button>
+            </div>
+            <input type="file" id="fotoInput" accept="image/*" capture="environment" class="hidden" />
+            <img id="fotoPreview" class="foto-preview" alt="Preview bukti foto" />
+          </div>
+
+          <button type="button" id="btnSimpan">✅ Simpan Hasil Pemeriksaan</button>
+          <button type="button" id="btnScanLagi" class="ghost" style="margin-top: 8px;">🔄 Scan Alat Lain</button>
+        </div>
+
+      </div>
     </div>
-    <div class="progress-done-all hidden" id="doneAllLabel">🎉 Done All — Semua Tugas Selesai!</div>
-  </div>
 
-  <div class="card">
-    <h2>Export Data</h2>
-    <div class="hint">Download data FSS &amp; APAR lengkap dengan kolom QRkode, KONDISI, EVIDEN, KETERANGAN, dan foto bukti sesuai hasil pemeriksaan di atas.</div>
-    <button id="btnDownload" class="secondary">⬇️ Download Excel (DATA FSS &amp; APAR)</button>
-    <button id="btnResetLog" class="danger">🗑️ Reset Semua Riwayat</button>
+    <!-- ======================= TAB 2: RIWAYAT & REKAP ======================= -->
+    <div id="tabRiwayat" class="tabpanel" style="margin-top: 16px;">
+      <div class="riwayat-grid-layout">
+        
+        <!-- Left: List of Inspections -->
+        <div class="card">
+          <h2><span>📋</span> Riwayat Pemeriksaan</h2>
+          
+          <div class="filter-row">
+            <input type="text" id="searchRiwayat" placeholder="🔍 Cari kode, ruangan, gedung, merk..." />
+            <select id="filterGedungRiwayat">
+              <option value="">Semua Gedung</option>
+            </select>
+          </div>
+
+          <div id="logList"></div>
+        </div>
+
+        <!-- Right: Progress Overview & Export -->
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          
+          <!-- Overall Progress Card -->
+          <div class="card">
+            <h2><span>📊</span> Ringkasan Progres</h2>
+            <div class="progress-wrap">
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill" id="progressFill"></div>
+              </div>
+              <div class="progress-label">
+                <span id="progressText">0 / 0 selesai</span>
+                <span id="progressPct">0%</span>
+              </div>
+            </div>
+            <div class="progress-done-all hidden" id="doneAllLabel">🎉 SEMUA APAR SELESAI DIPERIKSA!</div>
+
+            <h3 style="margin-top: 20px;">Progres Per Gedung</h3>
+            <div class="gedung-progress-list" id="gedungProgressList"></div>
+          </div>
+
+          <!-- Export & Data Tools Card -->
+          <div class="card">
+            <h2><span>💾</span> Ekspor &amp; Manajemen Data</h2>
+            <p class="hint">Unduh file Excel berisi data FSS &amp; APAR lengkap dengan kolom checklist KONDISI, nama pemeriksa, catatan, dan foto bukti pemeriksaan.</p>
+            <button type="button" id="btnDownload" class="secondary">⬇️ Download Rekap Excel (.xlsx)</button>
+            <button type="button" id="btnResetLog" class="danger" style="margin-top: 10px;">🗑️ Reset Riwayat Pemeriksaan</button>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
   </div>
 
 </div>
 
 <script>
 /* ===========================================================
-   Index cepat data alat: kode -> baris data
+   1. Data Indexing & Initial Setup
    =========================================================== */
 const DATA_BY_KODE = {};
-APAR_DATA.forEach(r => { if (r.kode) DATA_BY_KODE[String(r.kode).trim()] = r; });
+APAR_DATA.forEach(r => {
+  if (r.kode) {
+    const k = String(r.kode).trim();
+    DATA_BY_KODE[k] = r;
+  }
+});
 const TOTAL_TUGAS = APAR_DATA.filter(r => r.kode).length;
 
-/* ===========================================================
-   Penyimpanan riwayat — DATABASE BERSAMA (Firebase Firestore)
-   Semua orang yang buka aplikasi ini akan melihat riwayat &
-   progres yang SAMA (realtime), bukan cuma tersimpan di 1 HP.
-   localStorage tetap dipakai sebagai cache offline + fallback
-   kalau firebase-config.js belum diisi.
-   =========================================================== */
-const LOG_KEY = 'apar_log_v1';
+const LOG_KEY = 'apar_log_v2';
 function loadLocalLog() {
-  try { return JSON.parse(localStorage.getItem(LOG_KEY) || '{}'); }
-  catch (e) { return {}; }
+  try {
+    const raw = localStorage.getItem(LOG_KEY) || localStorage.getItem('apar_log_v1');
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
 }
-function saveLocalLog(log) { localStorage.setItem(LOG_KEY, JSON.stringify(log)); }
+function saveLocalLog(log) {
+  try {
+    localStorage.setItem(LOG_KEY, JSON.stringify(log));
+  } catch (e) {
+    console.warn('Gagal menyimpan cache lokal:', e);
+  }
+}
 
 let LOG = loadLocalLog();
 let db = null;
-let dbReady = false;
+let auth = null;
+let currentUser = null;
 const COLLECTION_NAME = 'apar_log';
 
-const dbStatusEl = document.getElementById('dbStatus');
-function setDbStatus(mode, text) {
-  dbStatusEl.textContent = text;
-  dbStatusEl.className = 'db-status db-' + mode;
+/* Helper lookup for log entries matching an APAR item */
+function getLogEntry(aparItem) {
+  if (!aparItem) return null;
+  const idKey = aparItem.id ? String(aparItem.id).trim() : null;
+  const kodeKey = aparItem.kode ? String(aparItem.kode).trim() : null;
+
+  if (idKey && LOG[idKey]) return LOG[idKey];
+  if (kodeKey && LOG[kodeKey]) return LOG[kodeKey];
+
+  for (const k in LOG) {
+    const entry = LOG[k];
+    if (entry) {
+      if (idKey && String(entry.id).trim() === idKey) return entry;
+      if (kodeKey && String(entry.kode).trim() === kodeKey) return entry;
+    }
+  }
+  return null;
 }
 
+/* ===========================================================
+   2. UI Elements & Helper Functions
+   =========================================================== */
+const statusMsg = document.getElementById('statusMsg');
+let statusTimeout = null;
+
+function showStatus(msg, type = 'info') {
+  if (statusTimeout) clearTimeout(statusTimeout);
+  statusMsg.textContent = msg;
+  statusMsg.className = 'status ' + type;
+  statusTimeout = setTimeout(() => {
+    statusMsg.className = 'status';
+  }, 4500);
+}
+
+const dbStatusEl = document.getElementById('dbStatus');
+const dbStatusText = document.getElementById('dbStatusText');
+
+function setDbStatus(mode, text) {
+  if (!dbStatusEl) return;
+  dbStatusEl.className = 'db-status-pill db-' + mode;
+  let icon = '🟢';
+  if (mode === 'offline') icon = '📴';
+  if (mode === 'connecting') icon = '🔄';
+  dbStatusEl.innerHTML = `<span>${icon}</span> <span>${text}</span>`;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ===========================================================
+   3. Firebase Initialization & Realtime Sync
+   =========================================================== */
 function isFirebaseConfigured() {
   return typeof firebaseConfig !== 'undefined'
     && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('GANTI_')
@@ -141,110 +332,218 @@ function isFirebaseConfigured() {
 
 function initFirebase() {
   if (!isFirebaseConfigured()) {
-    setDbStatus('offline', '📴 Mode lokal — riwayat cuma tersimpan di HP ini (lihat README untuk aktifkan database bersama)');
+    setDbStatus('offline', 'Mode Lokal (Penyimpanan HP)');
     renderRiwayat();
     renderProgress();
     return;
   }
+
   try {
-    firebase.initializeApp(firebaseConfig);
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
     db = firebase.firestore();
-    try { db.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch (e) {}
+    auth = firebase.auth();
 
-    setDbStatus('connecting', '🔄 Menyambungkan ke database bersama...');
+    try {
+      db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+    } catch (e) {}
 
+    setDbStatus('connecting', 'Menghubungkan ke Cloud...');
+
+    // Realtime Database Listener
     db.collection(COLLECTION_NAME).onSnapshot((snapshot) => {
-      const fresh = {};
-      snapshot.forEach(doc => { fresh[doc.id] = doc.data(); });
+      const fresh = { ...loadLocalLog() };
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (d) {
+          fresh[doc.id] = d;
+          if (d.id) fresh[String(d.id).trim()] = d;
+          if (d.kode) fresh[String(d.kode).trim()] = d;
+        }
+      });
       LOG = fresh;
-      saveLocalLog(LOG); // cache offline
-      dbReady = true;
-      setDbStatus('online', '🟢 Tersambung — progres terlihat oleh semua orang');
+      saveLocalLog(LOG);
+      setDbStatus('online', 'Cloud Aktif (' + snapshot.size + ' data)');
       renderRiwayat();
       renderProgress();
-      // Kalau lagi buka hasil scan, sinkronkan badge status juga
+
       if (currentEntry && !resultCard.classList.contains('hidden')) {
-        const existing = LOG[currentEntry.id];
+        const existing = getLogEntry(currentEntry);
         if (existing) currentEntry = { ...existing };
       }
     }, (err) => {
-      console.error('Firestore error:', err);
-      setDbStatus('offline', '⚠️ Gagal konek database — pakai data lokal sementara');
+      console.error('Firestore sync error:', err);
+      setDbStatus('offline', 'Mode Offline (Lokal)');
+      renderRiwayat();
+      renderProgress();
     });
+
+    // Auth State Listener
+    auth.onAuthStateChanged((user) => {
+      if (user) {
+        setLoggedInUser({
+          email: user.email || 'petugas@apar.id',
+          name: user.displayName || user.email ? user.email.split('@')[0] : 'Petugas'
+        });
+      } else {
+        const localUser = localStorage.getItem('apar_current_user');
+        if (localUser) {
+          try {
+            setLoggedInUser(JSON.parse(localUser));
+          } catch (e) {
+            showAuthScreen();
+          }
+        } else {
+          showAuthScreen();
+        }
+      }
+    });
+
   } catch (e) {
-    console.error(e);
-    setDbStatus('offline', '⚠️ Konfigurasi database salah — cek firebase-config.js');
+    console.error('Firebase init error:', e);
+    setDbStatus('offline', 'Mode Lokal');
   }
-}
-
-// Simpan 1 hasil pemeriksaan ke database bersama (atau lokal kalau offline)
-async function persistEntry(entry) {
-  LOG[entry.id] = entry;
-  saveLocalLog(LOG);
-  if (db) {
-    try {
-      await db.collection(COLLECTION_NAME).doc(String(entry.id)).set(entry);
-      return true;
-    } catch (e) {
-      console.error('Gagal simpan ke database bersama, tersimpan lokal dulu:', e);
-      showStatus('Tersimpan di HP ini, tapi gagal sinkron ke database bersama (cek koneksi internet).', 'err');
-      return false;
-    }
-  }
-  return true;
-}
-
-// Hapus semua riwayat dari database bersama (atau lokal kalau offline)
-async function clearAllEntries() {
-  LOG = {};
-  saveLocalLog(LOG);
-  if (db) {
-    const snapshot = await db.collection(COLLECTION_NAME).get();
-    const batchSize = 400; // batas aman per batch Firestore
-    let ops = [];
-    snapshot.forEach(doc => ops.push(doc.ref));
-    for (let i = 0; i < ops.length; i += batchSize) {
-      const batch = db.batch();
-      ops.slice(i, i + batchSize).forEach(ref => batch.delete(ref));
-      await batch.commit();
-    }
-  }
-}
-
-// Kompres foto sebelum disimpan supaya tidak kebesaran (batas dokumen
-// Firestore 1MB) dan biar irit kuota — resize max 1000px, JPEG quality 0.6
-function compressImage(file, maxDim = 1000, quality = 0.6) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const reader = new FileReader();
-    reader.onload = () => { img.src = reader.result; };
-    reader.onerror = reject;
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > height && width > maxDim) { height = Math.round(height * (maxDim / width)); width = maxDim; }
-      else if (height > maxDim) { width = Math.round(width * (maxDim / height)); height = maxDim; }
-      const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
-    };
-    img.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 /* ===========================================================
-   Status pesan
+   4. User Authentication Handling
    =========================================================== */
-const statusMsg = document.getElementById('statusMsg');
-function showStatus(msg, type) {
-  statusMsg.textContent = msg;
-  statusMsg.className = 'status ' + type;
-  setTimeout(() => { statusMsg.className = 'status'; }, 4000);
+const authScreen = document.getElementById('authScreen');
+const mainScreen = document.getElementById('mainScreen');
+const authForm = document.getElementById('authForm');
+const authEmail = document.getElementById('authEmail');
+const authPassword = document.getElementById('authPassword');
+const authName = document.getElementById('authName');
+const regNameGroup = document.getElementById('regNameGroup');
+const tabAuthLogin = document.getElementById('tabAuthLogin');
+const tabAuthRegister = document.getElementById('tabAuthRegister');
+const btnAuthSubmit = document.getElementById('btnAuthSubmit');
+const btnGuestLogin = document.getElementById('btnGuestLogin');
+const btnTogglePassword = document.getElementById('btnTogglePassword');
+const userAvatar = document.getElementById('userAvatar');
+const userNameText = document.getElementById('userNameText');
+const btnLogout = document.getElementById('btnLogout');
+
+let isRegisterMode = false;
+
+tabAuthLogin.addEventListener('click', () => {
+  isRegisterMode = false;
+  tabAuthLogin.classList.add('active');
+  tabAuthRegister.classList.remove('active');
+  regNameGroup.classList.add('hidden');
+  btnAuthSubmit.textContent = '🔑 Masuk ke Aplikasi';
+});
+
+tabAuthRegister.addEventListener('click', () => {
+  isRegisterMode = true;
+  tabAuthRegister.classList.add('active');
+  tabAuthLogin.classList.remove('active');
+  regNameGroup.classList.remove('hidden');
+  btnAuthSubmit.textContent = '✨ Buat Akun & Masuk';
+});
+
+btnTogglePassword.addEventListener('click', () => {
+  const type = authPassword.getAttribute('type') === 'password' ? 'text' : 'password';
+  authPassword.setAttribute('type', type);
+  btnTogglePassword.textContent = type === 'password' ? '👁️' : '🙈';
+});
+
+authForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+  const name = authName.value.trim();
+
+  if (!email || !password) {
+    showStatus('Harap isi email dan password.', 'err');
+    return;
+  }
+
+  btnAuthSubmit.disabled = true;
+  btnAuthSubmit.textContent = '⏳ Memproses...';
+
+  try {
+    if (auth && isFirebaseConfigured()) {
+      if (isRegisterMode) {
+        const cred = await auth.createUserWithEmailAndPassword(email, password);
+        if (name && cred.user) {
+          await cred.user.updateProfile({ displayName: name });
+        }
+        showStatus('Akun berhasil dibuat! Selamat bertugas.', 'ok');
+        setLoggedInUser({ email, name: name || email.split('@')[0] });
+      } else {
+        const cred = await auth.signInWithEmailAndPassword(email, password);
+        showStatus('Berhasil masuk! Memuat data...', 'ok');
+        setLoggedInUser({
+          email: cred.user.email,
+          name: cred.user.displayName || cred.user.email.split('@')[0]
+        });
+      }
+    } else {
+      // Fallback offline auth
+      const displayName = name || email.split('@')[0];
+      setLoggedInUser({ email, name: displayName });
+      showStatus('Masuk dalam mode mandiri.', 'ok');
+    }
+  } catch (err) {
+    console.error('Auth error:', err);
+    let msg = 'Gagal masuk: ' + (err.message || 'Periksa koneksi Anda');
+    if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+      msg = 'Kata sandi atau email salah.';
+    } else if (err.code === 'auth/user-not-found') {
+      msg = 'Akun tidak ditemukan. Silakan klik tab "Daftar Akun" terlebih dahulu.';
+    } else if (err.code === 'auth/weak-password') {
+      msg = 'Kata sandi minimal 6 karakter.';
+    } else if (err.code === 'auth/email-already-in-use') {
+      msg = 'Email ini sudah terdaftar. Silakan pilih tab "Masuk (Login)".';
+    }
+    showStatus(msg, 'err');
+  } finally {
+    btnAuthSubmit.disabled = false;
+    btnAuthSubmit.textContent = isRegisterMode ? '✨ Buat Akun & Masuk' : '🔑 Masuk ke Aplikasi';
+  }
+});
+
+btnGuestLogin.addEventListener('click', () => {
+  const guestName = prompt('Masukkan Nama Petugas Lapangan:', 'Petugas APAR') || 'Petugas Lapangan';
+  setLoggedInUser({ email: 'petugas@lapangan.id', name: guestName });
+  showStatus('Masuk sebagai ' + guestName + ' (Mode Lapangan).', 'ok');
+});
+
+function setLoggedInUser(user) {
+  currentUser = user;
+  localStorage.setItem('apar_current_user', JSON.stringify(user));
+  
+  if (userNameText) userNameText.textContent = user.name || user.email;
+  if (userAvatar) userAvatar.textContent = (user.name || user.email || 'P')[0].toUpperCase();
+
+  authScreen.classList.add('hidden');
+  mainScreen.classList.remove('hidden');
+
+  renderRiwayat();
+  renderProgress();
 }
 
+function showAuthScreen() {
+  currentUser = null;
+  localStorage.removeItem('apar_current_user');
+  authScreen.classList.remove('hidden');
+  mainScreen.classList.add('hidden');
+}
+
+btnLogout.addEventListener('click', async () => {
+  if (confirm('Apakah Anda yakin ingin keluar?')) {
+    if (auth) {
+      try { await auth.signOut(); } catch (e) {}
+    }
+    showAuthScreen();
+    showStatus('Anda telah keluar.', 'info');
+  }
+});
+
 /* ===========================================================
-   Tabs
+   5. Tab Navigation
    =========================================================== */
 const tabBtnScan = document.getElementById('tabBtnScan');
 const tabBtnRiwayat = document.getElementById('tabBtnRiwayat');
@@ -257,24 +556,30 @@ function goTab(name) {
   tabBtnRiwayat.classList.toggle('active', !isScan);
   tabScan.classList.toggle('active', isScan);
   tabRiwayat.classList.toggle('active', !isScan);
-  if (!isScan) { renderRiwayat(); renderProgress(); }
+  
+  if (!isScan) {
+    stopScanner();
+    renderRiwayat();
+    renderProgress();
+  }
 }
+
 tabBtnScan.addEventListener('click', () => goTab('scan'));
 tabBtnRiwayat.addEventListener('click', () => goTab('riwayat'));
 
 /* ===========================================================
-   KONDISI — daftar item pemeriksaan (sesuai form Pemeliharaan APAR Bulanan)
+   6. Checklist Kondisi & Form Handling
    =========================================================== */
 const KONDISI_ITEMS = [
   { key: 'kebersihanTabung', label: 'Kebersihan Tabung APAR', good: 'Bersih', bad: 'Kotor' },
-  { key: 'indikatorTekanan', label: 'Pemeriksaan Indikator Tekanan', good: 'Hijau', bad: 'Merah' },
-  { key: 'kunciPengaman', label: 'Pemeriksaan Kunci Pengaman', good: 'Ada', bad: 'Tidak Ada' },
-  { key: 'selangSemprot', label: 'Pemeriksaan Selang Semprot', good: 'Tidak Pecah', bad: 'Pecah' },
-  { key: 'nozzle', label: 'Pemeriksaan Nozzle', good: 'Ada', bad: 'Tidak Ada' },
-  { key: 'tagLabel', label: 'TAG Label Pemeliharaan', good: 'Ada', bad: 'Tidak Ada' },
+  { key: 'indikatorTekanan', label: 'Pemeriksaan Indikator Tekanan', good: 'Hijau (Normal)', bad: 'Merah (Isi/Kurang)' },
+  { key: 'kunciPengaman', label: 'Pemeriksaan Kunci Pengaman / Pin', good: 'Ada & Tersegel', bad: 'Tidak Ada / Rusak' },
+  { key: 'selangSemprot', label: 'Pemeriksaan Selang Semprot (Hose)', good: 'Bagus / Tidak Retak', bad: 'Pecah / Retak' },
+  { key: 'nozzle', label: 'Pemeriksaan Corong / Nozzle', good: 'Lengkap & Bersih', bad: 'Tersumbat / Hilang' },
+  { key: 'tagLabel', label: 'TAG Label Kartu Pemeliharaan', good: 'Ada & Terisi', bad: 'Tidak Ada' },
 ];
 
-let currentEntry = null; // entry sedang diisi di form scan
+let currentEntry = null;
 
 function renderKondisiForm() {
   const wrap = document.getElementById('kondisiList');
@@ -311,12 +616,39 @@ function refreshKondisiButtons() {
 }
 
 /* ===========================================================
-   Upload foto (EVIDEN / KETERANGAN)
+   7. Photo Compression & Upload (Eviden)
    =========================================================== */
 const fotoInput = document.getElementById('fotoInput');
 const fotoPreview = document.getElementById('fotoPreview');
 const btnUploadFoto = document.getElementById('btnUploadFoto');
 const btnHapusFoto = document.getElementById('btnHapusFoto');
+
+function compressImage(file, maxDim = 900, quality = 0.6) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; };
+    reader.onerror = reject;
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height && width > maxDim) {
+        height = Math.round(height * (maxDim / width));
+        width = maxDim;
+      } else if (height > maxDim) {
+        width = Math.round(width * (maxDim / height));
+        height = maxDim;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 btnUploadFoto.addEventListener('click', () => fotoInput.click());
 
@@ -330,12 +662,13 @@ fotoInput.addEventListener('change', async () => {
     fotoPreview.src = currentEntry.foto;
     fotoPreview.classList.add('show');
     btnHapusFoto.classList.remove('hidden');
+    showStatus('Foto bukti berhasil dipasang 📷', 'ok');
   } catch (e) {
     console.error(e);
     showStatus('Gagal memproses foto, coba lagi.', 'err');
   } finally {
     btnUploadFoto.disabled = false;
-    btnUploadFoto.textContent = '📷 Upload Foto';
+    btnUploadFoto.textContent = '📷 Ambil / Upload Foto';
   }
 });
 
@@ -348,7 +681,7 @@ btnHapusFoto.addEventListener('click', () => {
 });
 
 /* ===========================================================
-   Tampilkan hasil lookup + siapkan form checklist
+   8. Display Data & Inspection Checklist Form
    =========================================================== */
 const resultCard = document.getElementById('resultCard');
 const resultKode = document.getElementById('resultKode');
@@ -360,32 +693,48 @@ const keteranganInput = document.getElementById('keteranganInput');
 const FIELD_LABELS = [
   ['gedung', 'Gedung'],
   ['lantai', 'Lantai'],
-  ['merk', 'Merk'],
+  ['merk', 'Merk APAR'],
   ['kapasitas', 'Kapasitas'],
-  ['jenisGas', 'Jenis Gas'],
-  ['no', 'No. Data'],
+  ['jenisGas', 'Jenis Media / Gas'],
+  ['no', 'No. Urut Master'],
 ];
 
 function tampilkanData(kode) {
-  const data = DATA_BY_KODE[kode];
+  const cleanKode = String(kode).trim();
+  const data = DATA_BY_KODE[cleanKode];
+
   if (!data) {
     resultCard.classList.add('hidden');
-    showStatus(`Kode "${kode}" tidak ditemukan di data FSS/APAR.`, 'err');
+    showStatus(`Kode "${cleanKode}" tidak ditemukan dalam master data APAR.`, 'err');
     return;
   }
 
-  const existing = LOG[data.id];
+  const existing = getLogEntry(data);
   currentEntry = existing ? { ...existing } : {
-    id: data.id, kode: data.kode,
-    kebersihanTabung: null, indikatorTekanan: null, kunciPengaman: null,
-    selangSemprot: null, nozzle: null, tagLabel: null,
-    keterangan: '', foto: null, tanggal: null,
+    id: String(data.id || data.kode).trim(),
+    kode: String(data.kode).trim(),
+    kebersihanTabung: null,
+    indikatorTekanan: null,
+    kunciPengaman: null,
+    selangSemprot: null,
+    nozzle: null,
+    tagLabel: null,
+    keterangan: '',
+    foto: null,
+    tanggal: null,
+    pemeriksa: currentUser ? (currentUser.name || currentUser.email) : 'Petugas',
   };
 
   resultKode.textContent = 'Kode: ' + data.kode;
-  resultStatusBadge.textContent = existing ? '✅ Sudah Diperiksa' : '🆕 Belum Diperiksa';
-  resultStatusBadge.style.background = existing ? '#14532d' : '#334155';
-  resultStatusBadge.style.color = existing ? '#4ade80' : '#94a3b8';
+  if (existing) {
+    resultStatusBadge.textContent = '✅ Sudah Diperiksa';
+    resultStatusBadge.style.background = '#14532d';
+    resultStatusBadge.style.color = '#4ade80';
+  } else {
+    resultStatusBadge.textContent = '🆕 Belum Diperiksa';
+    resultStatusBadge.style.background = '#334155';
+    resultStatusBadge.style.color = '#cbd5e1';
+  }
 
   resultTitle.textContent = data.ruangan || '-';
   resultList.innerHTML = FIELD_LABELS.map(([key, label]) => {
@@ -395,6 +744,7 @@ function tampilkanData(kode) {
 
   renderKondisiForm();
   keteranganInput.value = currentEntry.keterangan || '';
+  
   if (currentEntry.foto) {
     fotoPreview.src = currentEntry.foto;
     fotoPreview.classList.add('show');
@@ -407,25 +757,58 @@ function tampilkanData(kode) {
   fotoInput.value = '';
 
   resultCard.classList.remove('hidden');
-  showStatus(existing ? 'Data ditemukan — hasil sebelumnya dimuat, silakan perbarui bila perlu ✅' : 'Data alat ditemukan, silakan isi checklist KONDISI ✅', 'ok');
+  resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  showStatus(existing ? `Data kode ${data.kode} dimuat (Sudah pernah diperiksa).` : `Data kode ${data.kode} siap diperiksa.`, 'ok');
+}
+
+/* ===========================================================
+   9. Persist Log to Firestore & Local Storage
+   =========================================================== */
+async function persistEntry(entry) {
+  const docId = String(entry.id || entry.kode).trim();
+  
+  LOG[docId] = entry;
+  if (entry.id) LOG[String(entry.id).trim()] = entry;
+  if (entry.kode) LOG[String(entry.kode).trim()] = entry;
+  
+  saveLocalLog(LOG);
+  renderRiwayat();
+  renderProgress();
+
+  if (db) {
+    try {
+      await db.collection(COLLECTION_NAME).doc(docId).set(entry);
+      return true;
+    } catch (e) {
+      console.error('Firestore persist error:', e);
+      showStatus('Tersimpan di memori perangkat. Akan sinkron saat online.', 'info');
+      return false;
+    }
+  }
+  return true;
 }
 
 document.getElementById('btnSimpan').addEventListener('click', async () => {
   if (!currentEntry) return;
   const btnSimpan = document.getElementById('btnSimpan');
+  
   currentEntry.keterangan = keteranganInput.value.trim();
   currentEntry.tanggal = new Date().toISOString();
+  currentEntry.pemeriksa = currentUser ? (currentUser.name || currentUser.email) : 'Petugas';
 
   btnSimpan.disabled = true;
-  btnSimpan.textContent = '⏳ Menyimpan...';
+  btnSimpan.textContent = '⏳ Menyimpan data...';
+
   try {
     await persistEntry({ ...currentEntry });
-    showStatus(db ? 'Hasil pemeriksaan tersimpan & tersinkron ke database bersama ✅' : 'Hasil pemeriksaan tersimpan di HP ini ✅', 'ok');
+    showStatus('Hasil pemeriksaan APAR kode ' + currentEntry.kode + ' berhasil disimpan! ✅', 'ok');
     resultStatusBadge.textContent = '✅ Sudah Diperiksa';
     resultStatusBadge.style.background = '#14532d';
     resultStatusBadge.style.color = '#4ade80';
     renderRiwayat();
     renderProgress();
+  } catch (e) {
+    showStatus('Gagal menyimpan: ' + e.message, 'err');
   } finally {
     btnSimpan.disabled = false;
     btnSimpan.textContent = '✅ Simpan Hasil Pemeriksaan';
@@ -436,23 +819,22 @@ document.getElementById('btnCariManual').addEventListener('click', () => {
   const kode = document.getElementById('manualKode').value.trim();
   if (kode) tampilkanData(kode);
 });
+
 document.getElementById('manualKode').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('btnCariManual').click();
 });
 
+document.getElementById('btnScanLagi').addEventListener('click', async () => {
+  resultCard.classList.add('hidden');
+  lastScanned = null;
+  await startScanner();
+});
+
 /* ===========================================================
-   QR Scanner
-   -----------------------------------------------------------
-   Bug lama: kamera kadang gagal restart setelah "Scan Lagi",
-   satu kode kadang kebaca 2x (double-fire) karena start()
-   dipanggil lagi sebelum stop() sebelumnya selesai, dan scanner
-   tetap jalan di background walau pindah tab Riwayat (boros
-   baterai & kadang bikin state kacau). Semua itu diperbaiki di
-   bawah dengan: lock anti-tumpang-tindih, guard pakai getState(),
-   auto-stop saat pindah tab, dan debounce hasil scan yang sama.
+   10. Camera QR Scanner Handling
    =========================================================== */
 let html5QrCode = null;
-let isTransitioning = false; // lock: sedang proses start/stop
+let isTransitioning = false;
 let lastScanned = null;
 let lastScanTime = 0;
 const readerDiv = document.getElementById('reader');
@@ -472,26 +854,37 @@ async function startScanner() {
   readerDiv.innerHTML = '';
 
   try {
-    if (!html5QrCode) html5QrCode = new Html5Qrcode("reader", { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE], verbose: false });
-    const config = { fps: 10, qrbox: { width: 250, height: 250 }, disableFlip: false };
+    if (!html5QrCode) {
+      html5QrCode = new Html5Qrcode("reader", {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        verbose: false
+      });
+    }
+    const config = {
+      fps: 12,
+      qrbox: { width: 250, height: 250 },
+      disableFlip: false
+    };
 
     await html5QrCode.start(
       { facingMode: "environment" },
       config,
       onScanSuccess,
-      () => {} // abaikan error "QR tidak ditemukan" per-frame, itu normal
+      () => {}
     );
-    btnStart.textContent = 'Mulai Scan QR';
+    btnStart.textContent = '⏹️ Tutup Kamera Scan';
+    btnStart.onclick = stopScanner;
   } catch (err) {
-    console.error('Gagal membuka kamera:', err);
-    let pesan = 'Gagal membuka kamera.';
+    console.error('Kamera error:', err);
+    let pesan = 'Gagal mengakses kamera.';
     const errStr = String(err && err.name || err);
-    if (errStr.includes('NotAllowedError')) pesan = 'Akses kamera ditolak. Izinkan kamera di pengaturan browser lalu coba lagi.';
-    else if (errStr.includes('NotFoundError')) pesan = 'Kamera tidak ditemukan di perangkat ini.';
-    else if (errStr.includes('NotReadableError')) pesan = 'Kamera sedang dipakai aplikasi lain. Tutup aplikasi lain lalu coba lagi.';
+    if (errStr.includes('NotAllowedError')) pesan = 'Izin kamera ditolak. Silakan izinkan akses kamera di browser.';
+    else if (errStr.includes('NotFoundError')) pesan = 'Kamera tidak ditemukan pada perangkat ini.';
+    else if (errStr.includes('NotReadableError')) pesan = 'Kamera sedang digunakan oleh aplikasi lain.';
     showStatus(pesan, 'err');
     readerDiv.classList.add('hidden');
-    btnStart.textContent = 'Mulai Scan QR';
+    btnStart.textContent = '📷 Buka Kamera Scan QR';
+    btnStart.onclick = startScanner;
   } finally {
     btnStart.disabled = false;
     isTransitioning = false;
@@ -500,16 +893,23 @@ async function startScanner() {
 
 async function stopScanner() {
   if (isTransitioning) return;
-  if (!scannerIsRunning()) { readerDiv.classList.add('hidden'); return; }
+  if (!scannerIsRunning()) {
+    readerDiv.classList.add('hidden');
+    btnStart.textContent = '📷 Buka Kamera Scan QR';
+    btnStart.onclick = startScanner;
+    return;
+  }
   isTransitioning = true;
   try {
     await html5QrCode.stop();
     html5QrCode.clear();
   } catch (e) {
-    console.warn('stopScanner:', e);
+    console.warn('Stop scanner exception:', e);
   } finally {
     readerDiv.classList.add('hidden');
     btnStart.disabled = false;
+    btnStart.textContent = '📷 Buka Kamera Scan QR';
+    btnStart.onclick = startScanner;
     isTransitioning = false;
   }
 }
@@ -517,8 +917,6 @@ async function stopScanner() {
 async function onScanSuccess(decodedText) {
   const kode = decodedText.trim();
   const now = Date.now();
-  // Debounce: abaikan hasil scan yang sama persis dalam 2 detik terakhir
-  // (kamera bisa membaca QR yang sama beberapa kali per detik).
   if (kode === lastScanned && now - lastScanTime < 2000) return;
   lastScanned = kode;
   lastScanTime = now;
@@ -529,62 +927,142 @@ async function onScanSuccess(decodedText) {
 
 btnStart.addEventListener('click', startScanner);
 
-document.getElementById('btnScanLagi').addEventListener('click', async () => {
-  resultCard.classList.add('hidden');
-  lastScanned = null; // izinkan scan ulang kode yang sama
-  await startScanner();
-});
-
-// Stop kamera otomatis kalau pindah ke tab Riwayat, biar tidak jalan
-// terus di background (hemat baterai & mencegah state kacau).
-const _origGoTab = goTab;
-goTab = function (name) {
-  if (name !== 'scan') stopScanner();
-  _origGoTab(name);
-};
-
-// Stop kamera kalau tab browser di-minimize/app dipindah ke background,
-// supaya saat kembali tidak error "kamera masih dipakai".
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopScanner();
 });
 
 /* ===========================================================
-   RIWAYAT — daftar hasil pemeriksaan yang sudah diisi (tab di atas)
+   11. Progress Dashboard & Statistics
    =========================================================== */
+function renderProgress() {
+  const totalWithKode = APAR_DATA.filter(r => r.kode).length;
+  const completedItems = APAR_DATA.filter(r => r.kode && getLogEntry(r));
+  const done = completedItems.length;
+  const remaining = Math.max(0, totalWithKode - done);
+  const pct = totalWithKode ? Math.round((done / totalWithKode) * 100) : 0;
+
+  // Update Top Bento Stats
+  document.getElementById('statTotalAlat').textContent = totalWithKode;
+  document.getElementById('statSudahPeriksa').textContent = done;
+  document.getElementById('statBelumPeriksa').textContent = remaining;
+  document.getElementById('statPersentase').textContent = pct + '%';
+  document.getElementById('tabBadgeCount').textContent = done;
+
+  // Update Progress Bar
+  const progressFill = document.getElementById('progressFill');
+  if (progressFill) progressFill.style.width = pct + '%';
+
+  const progressText = document.getElementById('progressText');
+  if (progressText) progressText.textContent = `${done} dari ${totalWithKode} alat selesai diperiksa`;
+
+  const progressPct = document.getElementById('progressPct');
+  if (progressPct) progressPct.textContent = pct + '%';
+
+  const doneAllLabel = document.getElementById('doneAllLabel');
+  if (doneAllLabel) {
+    if (totalWithKode > 0 && done >= totalWithKode) {
+      doneAllLabel.classList.remove('hidden');
+    } else {
+      doneAllLabel.classList.add('hidden');
+    }
+  }
+
+  // Building Progress Breakdown
+  renderGedungProgress();
+}
+
+function renderGedungProgress() {
+  const gedungListEl = document.getElementById('gedungProgressList');
+  if (!gedungListEl) return;
+
+  const buildingMap = {};
+  APAR_DATA.filter(r => r.kode).forEach(r => {
+    const g = r.gedung || 'Lainnya';
+    if (!buildingMap[g]) buildingMap[g] = { total: 0, done: 0 };
+    buildingMap[g].total++;
+    if (getLogEntry(r)) buildingMap[g].done++;
+  });
+
+  const keys = Object.keys(buildingMap).sort();
+  gedungListEl.innerHTML = keys.map(k => {
+    const b = buildingMap[k];
+    const bPct = b.total ? Math.round((b.done / b.total) * 100) : 0;
+    return `
+      <div class="gedung-item">
+        <div class="gedung-head">
+          <span>${escapeHtml(k)}</span>
+          <span style="color:${bPct === 100 ? '#34d399' : '#38bdf8'}">${b.done} / ${b.total} (${bPct}%)</span>
+        </div>
+        <div class="progress-bar-track" style="height:6px;">
+          <div class="progress-bar-fill" style="width:${bPct}%;"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ===========================================================
+   12. History / Riwayat List Rendering
+   =========================================================== */
+const searchRiwayat = document.getElementById('searchRiwayat');
+const filterGedungRiwayat = document.getElementById('filterGedungRiwayat');
+
+// Populate building filter dropdown
+const allGedungs = [...new Set(APAR_DATA.map(r => r.gedung).filter(Boolean))].sort();
+allGedungs.forEach(g => {
+  const opt = document.createElement('option');
+  opt.value = g;
+  opt.textContent = g;
+  filterGedungRiwayat.appendChild(opt);
+});
+
 function renderRiwayat() {
-  const q = (document.getElementById('searchRiwayat').value || '').toLowerCase();
+  const q = (searchRiwayat.value || '').toLowerCase().trim();
+  const selectedGedung = filterGedungRiwayat.value;
   const logList = document.getElementById('logList');
 
-  const entries = APAR_DATA
-    .filter(r => LOG[r.id])
-    .map(r => ({ data: r, entry: LOG[r.id] }))
+  const completed = APAR_DATA
+    .map(r => ({ data: r, entry: getLogEntry(r) }))
+    .filter(item => item.entry !== null)
     .filter(({ data }) => {
+      if (selectedGedung && data.gedung !== selectedGedung) return false;
       if (!q) return true;
-      return String(data.kode).toLowerCase().includes(q)
+      return String(data.kode || '').toLowerCase().includes(q)
         || (data.ruangan || '').toLowerCase().includes(q)
-        || (data.gedung || '').toLowerCase().includes(q);
+        || (data.gedung || '').toLowerCase().includes(q)
+        || (data.merk || '').toLowerCase().includes(q)
+        || (data.jenisGas || '').toLowerCase().includes(q);
     })
-    .sort((a, b) => new Date(b.entry.tanggal) - new Date(a.entry.tanggal));
+    .sort((a, b) => new Date(b.entry.tanggal || 0) - new Date(a.entry.tanggal || 0));
 
-  if (!entries.length) {
-    logList.innerHTML = `<div class="empty-state">Belum ada riwayat pemeriksaan. Scan QR alat di tab Scan untuk mulai mengisi ✅</div>`;
+  if (!completed.length) {
+    logList.innerHTML = `<div class="empty-state">
+      <div style="font-size:2rem; margin-bottom:8px;">📭</div>
+      Belum ada riwayat pemeriksaan yang cocok.<br/>Scan QR alat di tab Scan untuk mulai mengisi checklist.
+    </div>`;
     return;
   }
 
-  logList.innerHTML = entries.map(({ data, entry }) => {
-    const tgl = entry.tanggal ? new Date(entry.tanggal).toLocaleString('id-ID') : '-';
+  logList.innerHTML = completed.map(({ data, entry }) => {
+    const tgl = entry.tanggal ? new Date(entry.tanggal).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
     const eviden = entry.foto ? 'Ada' : 'Tidak Ada';
     const fotoHtml = entry.foto ? `<img class="log-foto" src="${entry.foto}" alt="Bukti foto">` : '';
-    const ket = entry.keterangan ? `<div class="log-ket">📝 ${escapeHtml(entry.keterangan)}</div>` : '';
+    const ket = entry.keterangan ? `<div class="log-ket">📝 <strong>Catatan:</strong> ${escapeHtml(entry.keterangan)}</div>` : '';
+    const pemeriksa = entry.pemeriksa ? `<div class="log-pemeriksa">👤 Petugas: ${escapeHtml(entry.pemeriksa)}</div>` : '';
+
     return `
       <div class="log-item">
         <div class="log-head">
-          <span class="log-kode">Kode ${data.kode}</span>
-          <span class="log-check">✅</span>
+          <span class="log-kode">Kode ${escapeHtml(data.kode)}</span>
+          <span class="log-check">✅ Selesai</span>
         </div>
-        <div class="log-ruangan">${data.ruangan || '-'} — ${data.gedung || '-'}${data.lantai ? ' LT.' + data.lantai : ''}</div>
-        <div class="log-meta">${data.merk || ''} · ${data.kapasitas || ''} · ${data.jenisGas || ''} · Diperiksa: ${tgl} · EVIDEN: ${eviden}</div>
+        <div class="log-ruangan">${escapeHtml(data.ruangan || '-')} — ${escapeHtml(data.gedung || '-')}${data.lantai ? ' LT.' + data.lantai : ''}</div>
+        <div class="log-meta">
+          Merk: <strong>${escapeHtml(data.merk || '-')}</strong> · 
+          Media: <strong>${escapeHtml(data.jenisGas || '-')}</strong> (${escapeHtml(data.kapasitas || '-')}) · 
+          Diperiksa: ${tgl}
+        </div>
+        ${pemeriksa}
         ${ket}
         ${fotoHtml}
       </div>
@@ -592,123 +1070,120 @@ function renderRiwayat() {
   }).join('');
 }
 
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-document.getElementById('searchRiwayat').addEventListener('input', renderRiwayat);
+searchRiwayat.addEventListener('input', renderRiwayat);
+filterGedungRiwayat.addEventListener('change', renderRiwayat);
 
 /* ===========================================================
-   PROGRES TUGAS — berapa dari total kode yang sudah selesai
+   13. Reset History
    =========================================================== */
-function renderProgress() {
-  const done = APAR_DATA.filter(r => r.kode && LOG[r.id]).length;
-  const pct = TOTAL_TUGAS ? Math.round((done / TOTAL_TUGAS) * 100) : 0;
-
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressText').textContent = `${done} / ${TOTAL_TUGAS} selesai`;
-  document.getElementById('progressPct').textContent = pct + '%';
-
-  const doneAllLabel = document.getElementById('doneAllLabel');
-  if (TOTAL_TUGAS > 0 && done >= TOTAL_TUGAS) {
-    doneAllLabel.classList.remove('hidden');
-    doneAllLabel.textContent = '🎉 Done All — Semua Tugas Selesai!';
-  } else {
-    doneAllLabel.classList.add('hidden');
-  }
-}
-
 document.getElementById('btnResetLog').addEventListener('click', async () => {
   const pesan = db
-    ? 'Hapus SEMUA riwayat pemeriksaan untuk SEMUA orang (database bersama)? Tindakan ini tidak bisa dibatalkan.'
-    : 'Hapus semua riwayat pemeriksaan di perangkat ini? Tindakan ini tidak bisa dibatalkan.';
+    ? '⚠️ PERINGATAN: Hapus SEMUA riwayat pemeriksaan untuk seluruh tim di Cloud Firestore? Tindakan ini permanen.'
+    : 'Hapus semua riwayat pemeriksaan di perangkat ini?';
+  
   if (!confirm(pesan)) return;
+
   const btn = document.getElementById('btnResetLog');
   btn.disabled = true;
-  btn.textContent = '⏳ Menghapus...';
+  btn.textContent = '⏳ Menghapus riwayat...';
+
   try {
-    await clearAllEntries();
+    LOG = {};
+    saveLocalLog(LOG);
+
+    if (db) {
+      const snapshot = await db.collection(COLLECTION_NAME).get();
+      const batchSize = 400;
+      let ops = [];
+      snapshot.forEach(doc => ops.push(doc.ref));
+      for (let i = 0; i < ops.length; i += batchSize) {
+        const batch = db.batch();
+        ops.slice(i, i + batchSize).forEach(ref => batch.delete(ref));
+        await batch.commit();
+      }
+    }
+
     renderRiwayat();
     renderProgress();
-    showStatus('Semua riwayat telah dihapus.', 'info');
+    showStatus('Semua riwayat pemeriksaan telah berhasil direset.', 'info');
   } catch (e) {
-    console.error(e);
+    console.error('Reset error:', e);
     showStatus('Gagal menghapus riwayat: ' + e.message, 'err');
   } finally {
     btn.disabled = false;
-    btn.textContent = '🗑️ Reset Semua Riwayat';
+    btn.textContent = '🗑️ Reset Riwayat Pemeriksaan';
   }
 });
 
 /* ===========================================================
-   DOWNLOAD EXCEL — Data FSS & APAR + kolom QRkode/KONDISI/KETERANGAN/foto
+   14. Excel Export
    =========================================================== */
 document.getElementById('btnDownload').addEventListener('click', async () => {
   const btn = document.getElementById('btnDownload');
   btn.disabled = true;
-  btn.textContent = 'Menyiapkan file...';
+  btn.textContent = '⏳ Menyiapkan file Excel...';
+
   try {
     await downloadExcel();
-    showStatus('File Excel berhasil dibuat ✅', 'ok');
+    showStatus('File Excel berhasil diunduh ✅', 'ok');
   } catch (e) {
-    console.error(e);
+    console.error('Export error:', e);
     showStatus('Gagal membuat file Excel: ' + e.message, 'err');
   } finally {
     btn.disabled = false;
-    btn.textContent = '⬇️ Download Excel (DATA FSS & APAR)';
+    btn.textContent = '⬇️ Download Rekap Excel (.xlsx)';
   }
 });
 
 async function downloadExcel() {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'Scan QR APAR App';
+  wb.creator = 'Sistem Pemeliharaan APAR & FSS';
   wb.created = new Date();
   const ws = wb.addWorksheet('DATA FSS & APAR');
 
   const headerRow1 = [
     'No', 'RUANGAN', 'GEDUNG', 'LANTAI', 'MERK', 'KAPASITAS', 'JENIS GAS', 'kode', 'QRkode',
     'KONDISI', '', '', '', '', '', '',
-    'KETERANGAN', 'FOTO', 'TANGGAL PERIKSA', 'STATUS TUGAS'
+    'KETERANGAN', 'FOTO', 'TANGGAL PERIKSA', 'PETUGAS PEMERIKSA', 'STATUS TUGAS'
   ];
   const headerRow2 = [
     '', '', '', '', '', '', '', '', '',
     'Kebersihan Tabung APAR', 'Pemeriksaan Indikator Tekanan', 'Pemeriksaan Kunci Pengaman',
     'Pemeriksaan Selang Semprot', 'Pemeriksaan Nozzle', 'TAG Label Pemeliharaan', 'EVIDEN',
-    '', '', '', ''
+    '', '', '', '', ''
   ];
 
   ws.addRow(headerRow1);
   ws.addRow(headerRow2);
 
-  // Merge single-column headers vertically (row1:row2), and KONDISI across J1:P1
-  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'Q', 'R', 'S', 'T'].forEach(col => {
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'Q', 'R', 'S', 'T', 'U'].forEach(col => {
     ws.mergeCells(`${col}1:${col}2`);
   });
   ws.mergeCells('J1:P1');
 
   [1, 2].forEach(r => {
     ws.getRow(r).eachCell(cell => {
-      cell.font = { bold: true, size: 10 };
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
       cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
     });
   });
-  ws.getRow(1).height = 18;
-  ws.getRow(2).height = 34;
+  ws.getRow(1).height = 20;
+  ws.getRow(2).height = 36;
 
   ws.columns = [
-    { width: 5 }, { width: 24 }, { width: 12 }, { width: 8 }, { width: 12 }, { width: 10 }, { width: 16 },
-    { width: 8 }, { width: 10 },
-    { width: 16 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 10 },
-    { width: 26 }, { width: 14 }, { width: 16 }, { width: 14 },
+    { width: 6 }, { width: 26 }, { width: 14 }, { width: 8 }, { width: 14 }, { width: 12 }, { width: 18 },
+    { width: 10 }, { width: 10 },
+    { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 18 }, { width: 10 },
+    { width: 28 }, { width: 16 }, { width: 18 }, { width: 20 }, { width: 16 },
   ];
 
   let rowIndex = 3;
   for (const data of APAR_DATA) {
-    const entry = LOG[data.id];
+    const entry = getLogEntry(data);
     const status = entry ? '✅ Selesai' : (data.kode ? 'Belum' : '-');
     const tgl = entry && entry.tanggal ? new Date(entry.tanggal).toLocaleString('id-ID') : '-';
+    const pemeriksa = entry && entry.pemeriksa ? entry.pemeriksa : '-';
 
     const row = ws.addRow([
       data.no ?? '',
@@ -719,7 +1194,7 @@ async function downloadExcel() {
       data.kapasitas ?? '',
       data.jenisGas ?? '',
       data.kode ?? '',
-      data.kode ?? '', // QRkode = isi kode yang sama dipakai untuk QR (menggantikan #VALUE!)
+      data.kode ?? '',
       entry ? (entry.kebersihanTabung === 'good' ? 'Bersih' : entry.kebersihanTabung === 'bad' ? 'Kotor' : '-') : '-',
       entry ? (entry.indikatorTekanan === 'good' ? 'Hijau' : entry.indikatorTekanan === 'bad' ? 'Merah' : '-') : '-',
       entry ? (entry.kunciPengaman === 'good' ? 'Ada' : entry.kunciPengaman === 'bad' ? 'Tidak Ada' : '-') : '-',
@@ -728,24 +1203,35 @@ async function downloadExcel() {
       entry ? (entry.tagLabel === 'good' ? 'Ada' : entry.tagLabel === 'bad' ? 'Tidak Ada' : '-') : '-',
       entry ? (entry.foto ? 'Ada' : 'Tidak Ada') : '-',
       entry && entry.keterangan ? entry.keterangan : '',
-      '', // kolom Foto diisi gambar (di bawah), teks dikosongkan
+      '',
       tgl,
+      pemeriksa,
       status,
     ]);
-    row.eachCell(cell => { cell.alignment = { vertical: 'middle', wrapText: true, horizontal: 'center' }; cell.font = { size: 9 }; });
-    row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }; // ruangan rata kiri
-    row.getCell(17).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }; // keterangan rata kiri
+
+    row.eachCell(cell => {
+      cell.alignment = { vertical: 'middle', wrapText: true, horizontal: 'center' };
+      cell.font = { size: 9 };
+    });
+    row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+    row.getCell(17).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
 
     if (entry && entry.foto) {
-      row.height = 70;
+      row.height = 75;
       const match = /^data:image\/(png|jpe?g);base64,/.exec(entry.foto);
       const ext = match ? (match[1] === 'jpg' ? 'jpeg' : match[1]) : 'jpeg';
       const base64 = entry.foto.split(',')[1];
-      const imgId = wb.addImage({ base64, extension: ext });
-      ws.addImage(imgId, {
-        tl: { col: 17, row: rowIndex - 1 },
-        ext: { width: 90, height: 90 },
-      });
+      if (base64) {
+        try {
+          const imgId = wb.addImage({ base64, extension: ext });
+          ws.addImage(imgId, {
+            tl: { col: 17, row: rowIndex - 1 },
+            ext: { width: 95, height: 95 },
+          });
+        } catch (err) {
+          console.warn('Gagal render image ke excel:', err);
+        }
+      }
     }
     rowIndex++;
   }
@@ -758,7 +1244,7 @@ async function downloadExcel() {
   const a = document.createElement('a');
   const stamp = new Date().toISOString().slice(0, 10);
   a.href = url;
-  a.download = `DATA_FSS_APAR_${stamp}.xlsx`;
+  a.download = `REKAP_PEMELIHARAAN_APAR_${stamp}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -766,11 +1252,11 @@ async function downloadExcel() {
 }
 
 /* ===========================================================
-   Init
+   15. Initial Execution
    =========================================================== */
+initFirebase();
 renderRiwayat();
 renderProgress();
-initFirebase();
 </script>
 
 </body>
