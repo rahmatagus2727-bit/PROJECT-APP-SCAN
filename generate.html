@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Generate QR Kode Alat</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, Roboto, Arial, sans-serif;
+    background: #0f172a;
+    color: #f1f5f9;
+    margin: 0;
+    padding: 16px;
+  }
+  .card {
+    background: #1e293b;
+    border-radius: 14px;
+    padding: 18px;
+    max-width: 900px;
+    margin: 0 auto 16px auto;
+  }
+  h1 { font-size: 1.2rem; margin-top: 0; }
+  h2 { font-size: 1rem; margin: 0 0 8px; color: #cbd5e1; }
+  label { display: block; font-size: 0.85rem; margin: 10px 0 4px; color: #94a3b8; }
+  input, select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: #f1f5f9;
+    font-size: 1rem;
+  }
+  button {
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: #22c55e;
+    color: #052e12;
+    font-weight: 700;
+    font-size: 1rem;
+    margin-top: 14px;
+    cursor: pointer;
+  }
+  button.secondary { background: #38bdf8; }
+  button.full { width: 100%; }
+  .qr-box { text-align: center; margin-top: 16px; }
+  .qr-box > div { background: white; display: inline-block; padding: 12px; border-radius: 10px; }
+  .qr-box p { font-weight: 700; margin: 10px 0 0; }
+  a.nav { color: #38bdf8; display: inline-block; margin-bottom: 14px; }
+  .hint { font-size: 0.8rem; color: #64748b; margin-top: 6px; }
+  .hidden { display: none; }
+
+  /* grid QR batch */
+  #batchGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .qr-item {
+    background: white;
+    color: #0f172a;
+    border-radius: 10px;
+    padding: 10px;
+    text-align: center;
+    break-inside: avoid;
+  }
+  .qr-item .qr-canvas { display:flex; justify-content:center; }
+  .qr-item .qr-kode { font-weight: 800; font-size: 0.85rem; margin-top: 6px; }
+  .qr-item .qr-ruangan { font-size: 0.68rem; color: #334155; margin-top: 2px; line-height: 1.2; }
+
+  @media print {
+    body * { visibility: hidden; }
+    #printArea, #printArea * { visibility: visible; }
+    #printArea { position: absolute; top: 0; left: 0; width: 100%; }
+    .qr-item { border: 1px dashed #94a3b8; }
+  }
+</style>
+</head>
+<body>
+
+<a class="nav" href="index.html">← Kembali ke halaman scan</a>
+
+<div class="card">
+  <h1>🏷️ Generate QR Kode Alat — dari Data FSS &amp; APAR</h1>
+  <div class="hint">Membuat QR otomatis untuk tiap baris (kolom "kode") pada data FSS &amp; APAR. Total <span id="totalAlat">0</span> alat sudah punya kode. QR ini ditempel di alat masing-masing; saat discan lewat halaman utama, datanya langsung muncul.</div>
+  <label for="filterGedung">Filter Gedung (opsional)</label>
+  <select id="filterGedung"><option value="">Semua Gedung</option></select>
+  <button class="full" id="btnGenerateBatch">🔳 Buat Semua QR</button>
+  <button class="full secondary" id="btnPrintBatch">🖨️ Print / Simpan Semua QR</button>
+</div>
+
+<div class="card" id="printArea">
+  <div id="batchGrid"></div>
+</div>
+
+<div class="card">
+  <h2>Buat 1 QR Manual (alat baru / belum ada di data)</h2>
+  <label for="kode">Kode / ID Alat</label>
+  <input type="text" id="kode" placeholder="Contoh: 202" />
+  <div class="hint">Isi kode alat yang belum ada di data FSS/APAR, lalu QR akan otomatis dibuat. Halaman ini jalan tanpa server / tanpa internet setelah dibuka pertama kali.</div>
+  <button id="btnBuat">Buat QR</button>
+
+  <div class="qr-box hidden" id="qrBox">
+    <div id="qrCanvas"></div>
+    <p id="qrLabel"></p>
+    <button id="btnPrint">🖨️ Print / Simpan QR Ini</button>
+  </div>
+</div>
+
+<script>
+  // ===== Data FSS & APAR (dari file DATA_FSS___APAR_-_Copy.xlsx, sheet APAR) =====
+  const APAR_DATA = [{"no": 1, "ruangan": "Pos Security NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "110"}, {"no": 2, "ruangan": "Pos Security NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "111"}, {"no": 3, "ruangan": "Teras NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "125 Lb", "jenisGas": "Dry Chemical Powder", "kode": "112"}, {"no": 4, "ruangan": "Lobby NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "113"}, {"no": 5, "ruangan": "MDF NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "114"}, {"no": 6, "ruangan": "MDF NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "115"}, {"no": 7, "ruangan": "Rectifier NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "116"}, {"no": 8, "ruangan": "Rectifier NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "117"}, {"no": 9, "ruangan": "Rectifier NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "118"}, {"no": 10, "ruangan": "Trafo NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "119"}, {"no": 11, "ruangan": "Cubical NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "120"}, {"no": 12, "ruangan": "Baterai Kering 1 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "121"}, {"no": 13, "ruangan": "Baterai Kering 1 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "122"}, {"no": 14, "ruangan": "Baterai Basah 1 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "123"}, {"no": 15, "ruangan": "Baterai Kering 2 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "124"}, {"no": 16, "ruangan": "Baterai Kering 2 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "125"}, {"no": 17, "ruangan": "Lobby NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "126"}, {"no": 18, "ruangan": "UPS NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "127"}, {"no": 19, "ruangan": "STP NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "128"}, {"no": 20, "ruangan": "Koridor NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "129"}, {"no": 21, "ruangan": "OLT NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "130"}, {"no": 22, "ruangan": "FTM NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "131"}, {"no": 23, "ruangan": "Lobby NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "132"}, {"no": 24, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "133"}, {"no": 25, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "134"}, {"no": 26, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "135"}, {"no": 27, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "136"}, {"no": 28, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "137"}, {"no": 29, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "138"}, {"no": 30, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "139"}, {"no": 31, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "140"}, {"no": 32, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "141"}, {"no": null, "ruangan": "Panel NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "142"}, {"no": null, "ruangan": "Panel NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "143"}, {"no": null, "ruangan": "Lobby NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "144"}, {"no": null, "ruangan": "Personil NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "145"}, {"no": null, "ruangan": "Sentral NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "146"}, {"no": null, "ruangan": "Sentral NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "147"}, {"no": null, "ruangan": "Flexi NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "148"}, {"no": null, "ruangan": "Flexi NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "149"}, {"no": null, "ruangan": "Metro NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "150"}, {"no": null, "ruangan": "Metro NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "151"}, {"no": null, "ruangan": "Lobby NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "152"}, {"no": null, "ruangan": "Personil NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "153"}, {"no": null, "ruangan": "BTS Flexi NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "154"}, {"no": null, "ruangan": "Space NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "155"}, {"no": null, "ruangan": "Monitoring NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "156"}, {"no": null, "ruangan": "Transmisi NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "157"}, {"no": null, "ruangan": "Transmisi NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "158"}, {"no": null, "ruangan": "Lobby NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "159"}, {"no": null, "ruangan": "Personil NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "160"}, {"no": null, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "161"}, {"no": null, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "162"}, {"no": null, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "163"}, {"no": null, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "164"}, {"no": null, "ruangan": "IPTV NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "165"}, {"no": null, "ruangan": "IPTV NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "166"}, {"no": null, "ruangan": "NGN NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "167"}, {"no": null, "ruangan": "NGN NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "168"}, {"no": null, "ruangan": "NGN NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "169"}, {"no": null, "ruangan": "Monitor NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "170"}, {"no": null, "ruangan": "Monitor NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "171"}, {"no": null, "ruangan": "Lobby NETRE LT.7", "gedung": "POP/NETRE", "lantai": 7, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "172"}, {"no": null, "ruangan": "Mesin Lift NETRE LT.7", "gedung": "POP/NETRE", "lantai": 7, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "173"}, {"no": null, "ruangan": "DICO Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "FIREFIX", "kapasitas": "3,5 kg", "jenisGas": "Dry Cemical Powder", "kode": "174"}, {"no": null, "ruangan": "DICO Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "3,5 kg", "jenisGas": "CO2", "kode": "175"}, {"no": null, "ruangan": "DICO Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "176"}, {"no": null, "ruangan": "Lorong Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "177"}, {"no": null, "ruangan": "TELIN Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "178"}, {"no": null, "ruangan": "IPTV Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "179"}, {"no": null, "ruangan": "Baterai Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "180"}, {"no": null, "ruangan": "Lobby Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "181"}, {"no": null, "ruangan": "Sentral Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "182"}, {"no": null, "ruangan": "Sentral Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "183"}, {"no": null, "ruangan": "Sentral Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "184"}, {"no": null, "ruangan": "Lobby Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "185"}, {"no": null, "ruangan": "Lobby Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "186"}, {"no": null, "ruangan": "Netra ARNET", "gedung": "ARNET", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "187"}, {"no": null, "ruangan": "Lobby ARNET", "gedung": "ARNET", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "188"}, {"no": null, "ruangan": "Pantry ARNET", "gedung": "ARNET", "lantai": null, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "189"}, {"no": null, "ruangan": "Depan Mushola ARNET", "gedung": "ARNET", "lantai": null, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "190"}, {"no": null, "ruangan": "Repair MODEM ARNET", "gedung": "ARNET", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "191"}, {"no": null, "ruangan": "Repair MODEM ARNET", "gedung": "ARNET", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "192"}, {"no": null, "ruangan": "Lobby Timur OPMC LT.1", "gedung": "OPMC", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "193"}, {"no": null, "ruangan": "Lobby Barat OPMC LT.1", "gedung": "OPMC", "lantai": null, "merk": "FIREFIX", "kapasitas": "3,5 kg", "jenisGas": "Dry Cemical Powder", "kode": "194"}, {"no": null, "ruangan": "Lorong OPMC LT.1", "gedung": "OPMC", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "195"}, {"no": null, "ruangan": "Lorong OPMC LT.1", "gedung": "OPMC", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "196"}, {"no": null, "ruangan": "Gudang Log SBU OPMC LT.1", "gedung": "OPMC", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "197"}, {"no": null, "ruangan": "Gudang Log SBU OPMC LT.1", "gedung": "OPMC", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "198"}, {"no": null, "ruangan": "Gudang TA OPMC LT.1", "gedung": "OPMC", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "199"}, {"no": null, "ruangan": "Lobby Timur OPMC LT.2", "gedung": "OPMC", "lantai": null, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "200"}, {"no": null, "ruangan": "Koridor OPMC LT.2", "gedung": "OPMC", "lantai": null, "merk": "FIREFIX", "kapasitas": "3,5 kg", "jenisGas": "Dry Cemical Powder", "kode": "201"}]
+;
+
+  document.getElementById('totalAlat').textContent = APAR_DATA.length;
+
+  // ===== Isi filter gedung =====
+  const filterGedung = document.getElementById('filterGedung');
+  const gedungList = [...new Set(APAR_DATA.map(r => r.gedung).filter(Boolean))].sort();
+  gedungList.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g;
+    opt.textContent = g;
+    filterGedung.appendChild(opt);
+  });
+
+  // ===== Generate batch QR per baris data =====
+  const batchGrid = document.getElementById('batchGrid');
+
+  function generateBatch() {
+    const gedung = filterGedung.value;
+    const list = gedung ? APAR_DATA.filter(r => r.gedung === gedung) : APAR_DATA;
+
+    batchGrid.innerHTML = '';
+    list.forEach(r => {
+      const item = document.createElement('div');
+      item.className = 'qr-item';
+
+      const canvasDiv = document.createElement('div');
+      canvasDiv.className = 'qr-canvas';
+      item.appendChild(canvasDiv);
+
+      const kodeP = document.createElement('div');
+      kodeP.className = 'qr-kode';
+      kodeP.textContent = 'Kode: ' + r.kode;
+      item.appendChild(kodeP);
+
+      const ruanganP = document.createElement('div');
+      ruanganP.className = 'qr-ruangan';
+      ruanganP.textContent = `${r.ruangan || ''} — ${r.gedung || ''}${r.lantai ? ' LT.' + r.lantai : ''}`;
+      item.appendChild(ruanganP);
+
+      batchGrid.appendChild(item);
+
+      // QR berisi kode alat (persis sama dengan yang dicari saat scan)
+      new QRCode(canvasDiv, {
+        text: String(r.kode),
+        width: 120,
+        height: 120,
+      });
+    });
+  }
+
+  document.getElementById('btnGenerateBatch').addEventListener('click', generateBatch);
+  document.getElementById('btnPrintBatch').addEventListener('click', () => {
+    if (!batchGrid.children.length) generateBatch();
+    window.print();
+  });
+
+  // Auto-generate begitu halaman dibuka
+  generateBatch();
+
+  // ===== Buat 1 QR manual =====
+  const kodeInput = document.getElementById('kode');
+  const qrBox = document.getElementById('qrBox');
+  const qrCanvas = document.getElementById('qrCanvas');
+  const qrLabel = document.getElementById('qrLabel');
+
+  document.getElementById('btnBuat').addEventListener('click', () => {
+    const kode = kodeInput.value.trim();
+    if (!kode) return;
+
+    qrCanvas.innerHTML = '';
+    new QRCode(qrCanvas, {
+      text: kode,
+      width: 260,
+      height: 260,
+    });
+
+    qrLabel.textContent = 'Kode: ' + kode;
+    qrBox.classList.remove('hidden');
+  });
+
+  document.getElementById('btnPrint').addEventListener('click', () => {
+    window.print();
+  });
+
+  kodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('btnBuat').click();
+  });
+</script>
+
+</body>
+</html>

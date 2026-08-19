@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cek &amp; Pemeliharaan APAR — Scan QR</title>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, Roboto, Arial, sans-serif;
+    background: #0f172a;
+    color: #f1f5f9;
+    margin: 0;
+    padding: 16px;
+    padding-bottom: 60px;
+  }
+  .card {
+    background: #1e293b;
+    border-radius: 14px;
+    padding: 18px;
+    max-width: 900px;
+    margin: 0 auto 16px auto;
+  }
+  h1 { font-size: 1.2rem; margin: 0 0 4px; }
+  h2 { font-size: 1rem; margin: 0 0 10px; color: #cbd5e1; }
+  h3 { font-size: 0.9rem; margin: 16px 0 8px; color: #93c5fd; border-top: 1px solid #334155; padding-top: 12px; }
+  p.sub { color: #94a3b8; font-size: 0.85rem; margin: 0 0 14px; }
+  label { display: block; font-size: 0.85rem; margin: 10px 0 4px; color: #94a3b8; }
+  input, select, textarea {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: #f1f5f9;
+    font-size: 1rem;
+    font-family: inherit;
+  }
+  textarea { min-height: 70px; resize: vertical; }
+  button {
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: #22c55e;
+    color: #052e12;
+    font-weight: 700;
+    font-size: 1rem;
+    margin-top: 14px;
+    cursor: pointer;
+  }
+  button.secondary { background: #38bdf8; color: #06202f; }
+  button.warn { background: #f59e0b; color: #3a2100; }
+  button.ghost { background: transparent; border: 1px solid #475569; color: #cbd5e1; font-weight: 500; }
+  button.full { width: 100%; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .hidden { display: none !important; }
+  .hint { font-size: 0.8rem; color: #64748b; margin-top: 6px; }
+  a.nav { color: #38bdf8; display: inline-block; margin-bottom: 4px; text-decoration: none; font-size: 0.85rem; }
+
+  /* Tabs */
+  .tabbar {
+    max-width: 900px;
+    margin: 0 auto 14px auto;
+    display: flex;
+    gap: 8px;
+  }
+  .tabbtn {
+    flex: 1;
+    background: #1e293b;
+    color: #94a3b8;
+    border-radius: 12px;
+    padding: 12px 8px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    text-align: center;
+    margin-top: 0;
+    border: 2px solid transparent;
+  }
+  .tabbtn.active {
+    background: #16233c;
+    color: #f1f5f9;
+    border-color: #38bdf8;
+  }
+
+  /* Scanner */
+  #qr-reader { width: 100%; border-radius: 10px; overflow: hidden; }
+  #qr-reader-msg { font-size: 0.8rem; color: #64748b; margin-top: 8px; }
+  .scan-btns { display: flex; gap: 10px; }
+  .scan-btns button { flex: 1; }
+
+  .result-code {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 12px;
+    margin-top: 14px;
+  }
+  .result-code .kode-big { font-size: 1.4rem; font-weight: 800; color: #4ade80; }
+  .infogrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 8px; font-size: 0.85rem; }
+  .infogrid div span { color: #64748b; }
+  .status-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-top: 8px;
+  }
+  .status-belum { background: #7c2d12; color: #fed7aa; }
+  .status-selesai { background: #14532d; color: #bbf7d0; }
+
+  .foto-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .foto-thumb { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; border: 1px solid #334155; display: none; }
+  .foto-thumb.show { display: block; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 20px;
+    transform: translateX(-50%);
+    background: #16a34a;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+    z-index: 50;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { background: #dc2626; }
+
+  /* Progress */
+  .progress-wrap { margin-top: 18px; }
+  .progress-bar-bg { background: #0f172a; border-radius: 999px; height: 14px; overflow: hidden; border: 1px solid #334155; }
+  .progress-bar-fill { background: linear-gradient(90deg,#22c55e,#4ade80); height: 100%; width: 0%; transition: width 0.3s ease; }
+  .progress-label { text-align: center; font-weight: 800; margin-top: 10px; font-size: 1rem; }
+  .progress-label.done { color: #4ade80; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; margin-top: 10px; border: 1px solid #334155; border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.72rem; min-width: 1400px; }
+  th, td { border: 1px solid #334155; padding: 6px 8px; text-align: center; white-space: nowrap; }
+  thead th { background: #16233c; color: #93c5fd; position: sticky; top: 0; }
+  tbody tr:nth-child(even) { background: #16233c55; }
+  td.left { text-align: left; white-space: normal; min-width: 140px; }
+  td.status-cell.belum { color: #fca5a5; font-weight: 700; }
+  td.status-cell.selesai { color: #4ade80; font-weight: 700; }
+
+  .filter-row { display: flex; gap: 8px; margin-bottom: 4px; }
+  .filter-row input { flex: 1; }
+
+  details.danger { margin-top: 24px; }
+  details.danger summary { cursor: pointer; color: #64748b; font-size: 0.8rem; }
+  details.danger .box { margin-top: 10px; padding: 12px; border: 1px dashed #475569; border-radius: 10px; }
+</style>
+</head>
+<body>
+
+<div class="card" style="margin-bottom:10px; padding-bottom:10px;">
+  <a class="nav" href="generate.html">🏷️ Generate / Cetak QR Kode →</a>
+  <h1>🧯 Cek &amp; Pemeliharaan APAR</h1>
+  <p class="sub">Scan QR / barcode di badan APAR untuk mengisi form pemeriksaan bulanan. Data tersimpan otomatis di perangkat ini (offline, tanpa server).</p>
+</div>
+
+<div class="tabbar">
+  <button class="tabbtn active" id="tabBtnScan">📷 Scan APAR</button>
+  <button class="tabbtn" id="tabBtnLog">📊 Log Data &amp; Download</button>
+</div>
+
+<!-- ============ TAB SCAN ============ -->
+<div id="panelScan">
+  <div class="card">
+    <h2>1. Scan Kode / QR Alat</h2>
+    <div id="qr-reader"></div>
+    <div id="qr-reader-msg">Kamera belum aktif.</div>
+    <div class="scan-btns">
+      <button class="full" id="btnStartScan">▶️ Mulai Scan Kamera</button>
+      <button class="full ghost hidden" id="btnStopScan">⏹️ Stop</button>
+    </div>
+
+    <label for="manualKode">Atau ketik kode manual</label>
+    <div style="display:flex; gap:8px;">
+      <input type="text" id="manualKode" placeholder="Contoh: 110" />
+      <button class="secondary" style="margin-top:0; white-space:nowrap;" id="btnCari">🔎 Cari</button>
+    </div>
+    <div class="hint">Kode ini sama dengan yang tercetak di QR/label alat (kolom "kode" di Data FSS &amp; APAR).</div>
+  </div>
+
+  <div class="card hidden" id="cardResult">
+    <h2>2. Detail Alat</h2>
+    <div class="result-code">
+      <div class="kode-big" id="rKode">-</div>
+      <div class="infogrid">
+        <div><span>No:</span> <b id="rNo">-</b></div>
+        <div><span>Ruangan:</span> <b id="rRuangan">-</b></div>
+        <div><span>Gedung:</span> <b id="rGedung">-</b></div>
+        <div><span>Lantai:</span> <b id="rLantai">-</b></div>
+        <div><span>Merk:</span> <b id="rMerk">-</b></div>
+        <div><span>Kapasitas:</span> <b id="rKapasitas">-</b></div>
+        <div><span>Jenis Gas:</span> <b id="rJenisGas">-</b></div>
+        <div><span>QRkode:</span> <b id="rQRkode">-</b></div>
+      </div>
+      <span class="status-pill" id="rStatusPill">Belum</span>
+      <div class="hint" id="rTanggal"></div>
+    </div>
+
+    <h3>KONDISI</h3>
+    <label>Kebersihan Tabung APAR</label>
+    <select id="fKebersihan">
+      <option value="-">- Pilih -</option>
+      <option>Bersih</option>
+      <option>Kotor / Berdebu</option>
+    </select>
+
+    <label>Pemeriksaan Indikator Tekanan</label>
+    <select id="fIndikator">
+      <option value="-">- Pilih -</option>
+      <option>Hijau</option>
+      <option>Kuning</option>
+      <option>Merah</option>
+      <option>Rusak</option>
+    </select>
+
+    <label>Pemeriksaan Kunci Pengaman</label>
+    <select id="fKunci">
+      <option value="-">- Pilih -</option>
+      <option>Ada</option>
+      <option>Tidak Ada</option>
+      <option>Rusak</option>
+    </select>
+
+    <label>Pemeriksaan Selang Semprot</label>
+    <select id="fSelang">
+      <option value="-">- Pilih -</option>
+      <option>Tidak Pecah</option>
+      <option>Pecah</option>
+      <option>Rusak</option>
+    </select>
+
+    <label>Pemeriksaan Nozzle</label>
+    <select id="fNozzle">
+      <option value="-">- Pilih -</option>
+      <option>Ada</option>
+      <option>Tidak Ada</option>
+      <option>Tersumbat</option>
+    </select>
+
+    <label>TAG Label Pemeliharaan</label>
+    <select id="fTag">
+      <option value="-">- Pilih -</option>
+      <option>Ada</option>
+      <option>Tidak Ada</option>
+      <option>Kadaluarsa</option>
+    </select>
+
+    <label>EVIDEN (Kesimpulan Kondisi)</label>
+    <select id="fEviden">
+      <option value="-">- Pilih -</option>
+      <option>AMAN</option>
+      <option>PERLU PERBAIKAN</option>
+      <option>PERLU PENGGANTIAN</option>
+    </select>
+
+    <h3>KETERANGAN</h3>
+    <textarea id="fKeterangan" placeholder="Catatan tambahan hasil pemeriksaan..."></textarea>
+
+    <div class="foto-row">
+      <button type="button" class="secondary" style="margin-top:0;" id="btnUploadFoto">📷 Upload / Ambil Foto</button>
+      <img id="fotoThumb" class="foto-thumb" alt="foto bukti" />
+      <span class="hint" id="fotoFileName"></span>
+    </div>
+    <input type="file" accept="image/*" capture="environment" id="fotoInput" class="hidden" />
+
+    <button class="full" id="btnSimpan">✅ Simpan Pemeriksaan</button>
+    <button class="full ghost" id="btnScanLagi">🔁 Scan Alat Lain</button>
+  </div>
+</div>
+
+<!-- ============ TAB LOG DATA ============ -->
+<div id="panelLog" class="hidden">
+  <div class="card">
+    <h2>📊 Log Data FSS &amp; APAR</h2>
+    <div class="filter-row">
+      <input type="text" id="searchLog" placeholder="Cari ruangan / gedung / kode..." />
+    </div>
+    <div class="table-wrap">
+      <table id="logTable">
+        <thead>
+          <tr>
+            <th rowspan="2">No</th>
+            <th rowspan="2">RUANGAN</th>
+            <th rowspan="2">GEDUNG</th>
+            <th rowspan="2">LANTAI</th>
+            <th rowspan="2">MERK</th>
+            <th rowspan="2">KAPASITAS</th>
+            <th rowspan="2">JENIS GAS</th>
+            <th rowspan="2">kode</th>
+            <th rowspan="2">QRkode</th>
+            <th colspan="7">KONDISI</th>
+            <th rowspan="2">KETERANGAN</th>
+            <th rowspan="2">FOTO</th>
+            <th rowspan="2">TANGGAL PERIKSA</th>
+            <th rowspan="2">STATUS TUGAS</th>
+          </tr>
+          <tr>
+            <th>Kebersihan Tabung APAR</th>
+            <th>Pemeriksaan Indikator Tekanan</th>
+            <th>Pemeriksaan Kunci Pengaman</th>
+            <th>Pemeriksaan Selang Semprot</th>
+            <th>Pemeriksaan Nozzle</th>
+            <th>TAG Label Pemeliharaan</th>
+            <th>EVIDEN</th>
+          </tr>
+        </thead>
+        <tbody id="logTbody"></tbody>
+      </table>
+    </div>
+
+    <div class="progress-wrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <div class="progress-label" id="progressLabel">0 dari 0 tugas selesai</div>
+    </div>
+
+    <button class="full secondary" id="btnDownload">⬇️ Download Excel (Data FSS &amp; APAR)</button>
+    <div class="hint" id="downloadHint" style="text-align:center;"></div>
+
+    <details class="danger">
+      <summary>⚙️ Lainnya</summary>
+      <div class="box">
+        <button class="full warn" id="btnReset">🗑️ Reset Semua Data Pemeriksaan</button>
+        <div class="hint">Menghapus semua isian KONDISI, keterangan, dan foto yang sudah disimpan di perangkat ini. Tidak bisa dibatalkan.</div>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ===== Data FSS & APAR (master data alat, dari file DATA_FSS_APAR) =====
+  const APAR_DATA = [{"no": 1, "ruangan": "Pos Security NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "110"}, {"no": 2, "ruangan": "Pos Security NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "111"}, {"no": 3, "ruangan": "Teras NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "125 Lb", "jenisGas": "Dry Chemical Powder", "kode": "112"}, {"no": 4, "ruangan": "Lobby NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "113"}, {"no": 5, "ruangan": "MDF NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "114"}, {"no": 6, "ruangan": "MDF NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "115"}, {"no": 7, "ruangan": "Rectifier NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "116"}, {"no": 8, "ruangan": "Rectifier NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "117"}, {"no": 9, "ruangan": "Rectifier NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "118"}, {"no": 10, "ruangan": "Trafo NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "119"}, {"no": 11, "ruangan": "Cubical NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "120"}, {"no": 12, "ruangan": "Baterai Kering 1 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "121"}, {"no": 13, "ruangan": "Baterai Kering 1 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "122"}, {"no": 14, "ruangan": "Baterai Basah 1 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "123"}, {"no": 15, "ruangan": "Baterai Kering 2 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Chemical Powder", "kode": "124"}, {"no": 16, "ruangan": "Baterai Kering 2 NETRE LT.1", "gedung": "POP/NETRE", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "125"}, {"no": 17, "ruangan": "Lobby NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "126"}, {"no": 18, "ruangan": "UPS NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "127"}, {"no": 19, "ruangan": "STP NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "128"}, {"no": 20, "ruangan": "Koridor NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "129"}, {"no": 21, "ruangan": "OLT NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "130"}, {"no": 22, "ruangan": "FTM NETRE LT.2", "gedung": "POP/NETRE", "lantai": 2, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "131"}, {"no": 23, "ruangan": "Lobby NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "132"}, {"no": 24, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "133"}, {"no": 25, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "134"}, {"no": 26, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "135"}, {"no": 27, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "136"}, {"no": 28, "ruangan": "Data Center NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "137"}, {"no": 29, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "138"}, {"no": 30, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "139"}, {"no": 31, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "140"}, {"no": 32, "ruangan": "NGN NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "141"}, {"no": 33, "ruangan": "Panel NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "142"}, {"no": 34, "ruangan": "Panel NETRE LT.3", "gedung": "POP/NETRE", "lantai": 3, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "143"}, {"no": 35, "ruangan": "Lobby NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "144"}, {"no": 36, "ruangan": "Personil NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "145"}, {"no": 37, "ruangan": "Sentral NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "146"}, {"no": 38, "ruangan": "Sentral NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "147"}, {"no": 39, "ruangan": "Flexi NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "148"}, {"no": 40, "ruangan": "Flexi NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "149"}, {"no": 41, "ruangan": "Metro NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "150"}, {"no": 42, "ruangan": "Metro NETRE LT.4", "gedung": "POP/NETRE", "lantai": 4, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "151"}, {"no": 43, "ruangan": "Lobby NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "152"}, {"no": 44, "ruangan": "Personil NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "153"}, {"no": 45, "ruangan": "BTS Flexi NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "154"}, {"no": 46, "ruangan": "Space NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "155"}, {"no": 47, "ruangan": "Monitoring NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "156"}, {"no": 48, "ruangan": "Transmisi NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "157"}, {"no": 49, "ruangan": "Transmisi NETRE LT.5", "gedung": "POP/NETRE", "lantai": 5, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "158"}, {"no": 50, "ruangan": "Lobby NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "159"}, {"no": 51, "ruangan": "Personil NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "160"}, {"no": 52, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "161"}, {"no": 53, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "162"}, {"no": 54, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "163"}, {"no": 55, "ruangan": "Lorong NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "164"}, {"no": 56, "ruangan": "IPTV NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "165"}, {"no": 57, "ruangan": "IPTV NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "166"}, {"no": 58, "ruangan": "NGN NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "167"}, {"no": 59, "ruangan": "NGN NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "168"}, {"no": 60, "ruangan": "NGN NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "169"}, {"no": 61, "ruangan": "Monitor NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "170"}, {"no": 62, "ruangan": "Monitor NETRE LT.6", "gedung": "POP/NETRE", "lantai": 6, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "171"}, {"no": 63, "ruangan": "Lobby NETRE LT.7", "gedung": "POP/NETRE", "lantai": 7, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "172"}, {"no": 64, "ruangan": "Mesin Lift NETRE LT.7", "gedung": "POP/NETRE", "lantai": 7, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "173"}, {"no": 65, "ruangan": "DICO Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "FIREFIX", "kapasitas": "3,5 kg", "jenisGas": "Dry Cemical Powder", "kode": "174"}, {"no": 66, "ruangan": "DICO Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "3,5 kg", "jenisGas": "CO2", "kode": "175"}, {"no": 67, "ruangan": "DICO Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "176"}, {"no": 68, "ruangan": "Lorong Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "177"}, {"no": 69, "ruangan": "TELIN Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "178"}, {"no": 70, "ruangan": "IPTV Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "179"}, {"no": 71, "ruangan": "Baterai Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "180"}, {"no": 72, "ruangan": "Lobby Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "181"}, {"no": 73, "ruangan": "Sentral Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "182"}, {"no": 74, "ruangan": "Sentral Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "183"}, {"no": 75, "ruangan": "Sentral Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "184"}, {"no": 76, "ruangan": "Lobby Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "185"}, {"no": 77, "ruangan": "Lobby Neucentrix LT.1", "gedung": "NEUCENTRIX", "lantai": 1, "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "186"}, {"no": 78, "ruangan": "Netra ARNET", "gedung": "ARNET", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "187"}, {"no": 79, "ruangan": "Lobby ARNET", "gedung": "ARNET", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "188"}, {"no": 80, "ruangan": "Pantry ARNET", "gedung": "ARNET", "lantai": "", "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "189"}, {"no": 81, "ruangan": "Depan Mushola ARNET", "gedung": "ARNET", "lantai": "", "merk": "FIREFIX", "kapasitas": "5 kg", "jenisGas": "CO2", "kode": "190"}, {"no": 82, "ruangan": "Repair MODEM ARNET", "gedung": "ARNET", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "191"}, {"no": 83, "ruangan": "Repair MODEM ARNET", "gedung": "ARNET", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "192"}, {"no": 84, "ruangan": "Lobby Timur OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "193"}, {"no": 85, "ruangan": "Lobby Barat OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "FIREFIX", "kapasitas": "3,5 kg", "jenisGas": "Dry Cemical Powder", "kode": "194"}, {"no": 86, "ruangan": "Lorong OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "195"}, {"no": 87, "ruangan": "Lorong OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "196"}, {"no": 88, "ruangan": "Gudang Log SBU OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "197"}, {"no": 89, "ruangan": "Gudang Log SBU OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "198"}, {"no": 90, "ruangan": "Gudang TA OPMC LT.1", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "CO2", "kode": "199"}, {"no": 91, "ruangan": "Lobby Timur OPMC LT.2", "gedung": "OPMC", "lantai": "", "merk": "BUCKEYE", "kapasitas": "10 Lb", "jenisGas": "Dry Cemical Powder", "kode": "200"}, {"no": 92, "ruangan": "Koridor OPMC LT.2", "gedung": "OPMC", "lantai": "", "merk": "FIREFIX", "kapasitas": "3,5 kg", "jenisGas": "Dry Cemical Powder", "kode": "201"}];
+
+  const STORAGE_KEY = 'apar_pemeliharaan_v1';
+  const KONDISI_FIELDS = ['kebersihan','indikator','kunci','selang','nozzle','tag','eviden'];
+  const KONDISI_LABELS = {
+    kebersihan: 'Kebersihan Tabung APAR',
+    indikator: 'Pemeriksaan Indikator Tekanan',
+    kunci: 'Pemeriksaan Kunci Pengaman',
+    selang: 'Pemeriksaan Selang Semprot',
+    nozzle: 'Pemeriksaan Nozzle',
+    tag: 'TAG Label Pemeliharaan',
+    eviden: 'EVIDEN'
+  };
+
+  function loadChecks() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    } catch (e) { return {}; }
+  }
+  function saveChecks(checks) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(checks));
+  }
+  let CHECKS = loadChecks();
+
+  function formatTanggal(d) {
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}, ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}`;
+  }
+
+  function isSelesai(entry) {
+    if (!entry) return false;
+    return KONDISI_FIELDS.every(k => entry.kondisi && entry.kondisi[k] && entry.kondisi[k] !== '-');
+  }
+
+  function showToast(msg, isError) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (isError ? ' error' : '');
+    clearTimeout(showToast._timer);
+    showToast._timer = setTimeout(() => { t.className = 'toast'; }, 2200);
+  }
+
+  // ===== Tabs =====
+  const tabBtnScan = document.getElementById('tabBtnScan');
+  const tabBtnLog = document.getElementById('tabBtnLog');
+  const panelScan = document.getElementById('panelScan');
+  const panelLog = document.getElementById('panelLog');
+
+  function goTab(tab) {
+    if (tab === 'scan') {
+      tabBtnScan.classList.add('active');
+      tabBtnLog.classList.remove('active');
+      panelScan.classList.remove('hidden');
+      panelLog.classList.add('hidden');
+    } else {
+      tabBtnLog.classList.add('active');
+      tabBtnScan.classList.remove('active');
+      panelLog.classList.remove('hidden');
+      panelScan.classList.add('hidden');
+      renderLogTable();
+      updateProgress();
+    }
+  }
+  tabBtnScan.addEventListener('click', () => goTab('scan'));
+  tabBtnLog.addEventListener('click', () => goTab('log'));
+
+  // ===== Cari data by kode =====
+  function findByKode(kode) {
+    kode = String(kode).trim();
+    return APAR_DATA.find(r => String(r.kode).trim() === kode);
+  }
+
+  let currentItem = null;
+  let currentFotoBase64 = null;
+  let currentFotoName = '';
+
+  const cardResult = document.getElementById('cardResult');
+
+  function fillForm(item) {
+    currentItem = item;
+    const entry = CHECKS[item.kode] || {};
+    document.getElementById('rKode').textContent = 'Kode: ' + item.kode;
+    document.getElementById('rNo').textContent = item.no ?? '-';
+    document.getElementById('rRuangan').textContent = item.ruangan || '-';
+    document.getElementById('rGedung').textContent = item.gedung || '-';
+    document.getElementById('rLantai').textContent = item.lantai || '-';
+    document.getElementById('rMerk').textContent = item.merk || '-';
+    document.getElementById('rKapasitas').textContent = item.kapasitas || '-';
+    document.getElementById('rJenisGas').textContent = item.jenisGas || '-';
+    document.getElementById('rQRkode').textContent = item.kode;
+
+    const pill = document.getElementById('rStatusPill');
+    const selesai = isSelesai(entry);
+    pill.textContent = selesai ? '✅ Selesai' : 'Belum';
+    pill.className = 'status-pill ' + (selesai ? 'status-selesai' : 'status-belum');
+    document.getElementById('rTanggal').textContent = entry.tanggal ? ('Terakhir diperiksa: ' + entry.tanggal) : '';
+
+    const kondisi = entry.kondisi || {};
+    document.getElementById('fKebersihan').value = kondisi.kebersihan || '-';
+    document.getElementById('fIndikator').value = kondisi.indikator || '-';
+    document.getElementById('fKunci').value = kondisi.kunci || '-';
+    document.getElementById('fSelang').value = kondisi.selang || '-';
+    document.getElementById('fNozzle').value = kondisi.nozzle || '-';
+    document.getElementById('fTag').value = kondisi.tag || '-';
+    document.getElementById('fEviden').value = kondisi.eviden || '-';
+    document.getElementById('fKeterangan').value = entry.keterangan || '';
+
+    currentFotoBase64 = entry.foto || null;
+    currentFotoName = entry.fotoName || '';
+    const thumb = document.getElementById('fotoThumb');
+    const fname = document.getElementById('fotoFileName');
+    if (currentFotoBase64) {
+      thumb.src = currentFotoBase64;
+      thumb.classList.add('show');
+      fname.textContent = currentFotoName || 'foto tersimpan';
+    } else {
+      thumb.classList.remove('show');
+      thumb.src = '';
+      fname.textContent = '';
+    }
+
+    cardResult.classList.remove('hidden');
+    cardResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function cariKode(kode) {
+    const item = findByKode(kode);
+    if (!item) {
+      showToast('Kode "' + kode + '" tidak ditemukan di Data FSS & APAR', true);
+      cardResult.classList.add('hidden');
+      return;
+    }
+    fillForm(item);
+  }
+
+  document.getElementById('btnCari').addEventListener('click', () => {
+    const v = document.getElementById('manualKode').value.trim();
+    if (!v) { showToast('Isi kode terlebih dahulu', true); return; }
+    cariKode(v);
+  });
+  document.getElementById('manualKode').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('btnCari').click();
+  });
+
+  // ===== Kamera Scan (html5-qrcode) =====
+  let html5QrCode = null;
+  let scanning = false;
+
+  document.getElementById('btnStartScan').addEventListener('click', async () => {
+    const msg = document.getElementById('qr-reader-msg');
+    try {
+      html5QrCode = new Html5Qrcode('qr-reader');
+      await html5QrCode.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 240, height: 240 } },
+        (decodedText) => {
+          document.getElementById('manualKode').value = decodedText;
+          cariKode(decodedText);
+          stopScan();
+        },
+        () => { /* silent scan-fail per frame */ }
+      );
+      scanning = true;
+      msg.textContent = 'Kamera aktif — arahkan ke QR/barcode alat.';
+      document.getElementById('btnStartScan').classList.add('hidden');
+      document.getElementById('btnStopScan').classList.remove('hidden');
+    } catch (err) {
+      msg.textContent = 'Gagal membuka kamera: ' + err + ' — gunakan input kode manual di bawah.';
+      showToast('Kamera tidak tersedia, gunakan input manual', true);
+    }
+  });
+
+  function stopScan() {
+    if (html5QrCode && scanning) {
+      html5QrCode.stop().then(() => {
+        html5QrCode.clear();
+        scanning = false;
+        document.getElementById('qr-reader-msg').textContent = 'Kamera dimatikan.';
+        document.getElementById('btnStartScan').classList.remove('hidden');
+        document.getElementById('btnStopScan').classList.add('hidden');
+      }).catch(() => {});
+    }
+  }
+  document.getElementById('btnStopScan').addEventListener('click', stopScan);
+
+  // ===== Upload Foto =====
+  const fotoInput = document.getElementById('fotoInput');
+  document.getElementById('btnUploadFoto').addEventListener('click', () => fotoInput.click());
+  fotoInput.addEventListener('change', () => {
+    const file = fotoInput.files[0];
+    if (!file) return;
+    currentFotoName = file.name;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      currentFotoBase64 = e.target.result;
+      const thumb = document.getElementById('fotoThumb');
+      thumb.src = currentFotoBase64;
+      thumb.classList.add('show');
+      document.getElementById('fotoFileName').textContent = currentFotoName;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // ===== Simpan =====
+  document.getElementById('btnSimpan').addEventListener('click', () => {
+    if (!currentItem) return;
+    const kondisi = {
+      kebersihan: document.getElementById('fKebersihan').value,
+      indikator: document.getElementById('fIndikator').value,
+      kunci: document.getElementById('fKunci').value,
+      selang: document.getElementById('fSelang').value,
+      nozzle: document.getElementById('fNozzle').value,
+      tag: document.getElementById('fTag').value,
+      eviden: document.getElementById('fEviden').value,
+    };
+    const entry = {
+      kondisi,
+      keterangan: document.getElementById('fKeterangan').value.trim(),
+      foto: currentFotoBase64,
+      fotoName: currentFotoName,
+      tanggal: formatTanggal(new Date()),
+    };
+    CHECKS[currentItem.kode] = entry;
+    saveChecks(CHECKS);
+    showToast('✅ Pemeriksaan kode ' + currentItem.kode + ' tersimpan');
+    fillForm(currentItem);
+  });
+
+  document.getElementById('btnScanLagi').addEventListener('click', () => {
+    cardResult.classList.add('hidden');
+    currentItem = null;
+    currentFotoBase64 = null;
+    currentFotoName = '';
+    document.getElementById('manualKode').value = '';
+    document.getElementById('manualKode').focus();
+  });
+
+  // ===== Log Table =====
+  function renderLogTable(filterText) {
+    const tbody = document.getElementById('logTbody');
+    tbody.innerHTML = '';
+    const term = (filterText || document.getElementById('searchLog').value || '').toLowerCase().trim();
+
+    APAR_DATA.forEach((item, idx) => {
+      const entry = CHECKS[item.kode] || {};
+      const k = entry.kondisi || {};
+      const selesai = isSelesai(entry);
+
+      if (term) {
+        const hay = [item.ruangan, item.gedung, item.kode].join(' ').toLowerCase();
+        if (!hay.includes(term)) return;
+      }
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx + 1}</td>
+        <td class="left">${item.ruangan || '-'}</td>
+        <td>${item.gedung || '-'}</td>
+        <td>${item.lantai || '-'}</td>
+        <td>${item.merk || '-'}</td>
+        <td>${item.kapasitas || '-'}</td>
+        <td>${item.jenisGas || '-'}</td>
+        <td>${item.kode}</td>
+        <td>${item.kode}</td>
+        <td>${k.kebersihan || '-'}</td>
+        <td>${k.indikator || '-'}</td>
+        <td>${k.kunci || '-'}</td>
+        <td>${k.selang || '-'}</td>
+        <td>${k.nozzle || '-'}</td>
+        <td>${k.tag || '-'}</td>
+        <td>${k.eviden || '-'}</td>
+        <td class="left">${entry.keterangan || ''}</td>
+        <td>${entry.foto ? '📷 Ada' : ''}</td>
+        <td>${entry.tanggal || '-'}</td>
+        <td class="status-cell ${selesai ? 'selesai' : 'belum'}">${selesai ? '✅ Selesai' : 'Belum'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+  document.getElementById('searchLog').addEventListener('input', (e) => renderLogTable(e.target.value));
+
+  // ===== Progress =====
+  function updateProgress() {
+    const total = APAR_DATA.length;
+    const done = APAR_DATA.filter(item => isSelesai(CHECKS[item.kode])).length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    const label = document.getElementById('progressLabel');
+    if (done >= total && total > 0) {
+      label.textContent = '✅ Done All — ' + done + ' dari ' + total + ' tugas selesai';
+      label.classList.add('done');
+    } else {
+      label.textContent = done + ' dari ' + total + ' tugas selesai';
+      label.classList.remove('done');
+    }
+  }
+
+  // ===== Reset =====
+  document.getElementById('btnReset').addEventListener('click', () => {
+    if (!confirm('Yakin hapus SEMUA data pemeriksaan yang tersimpan di perangkat ini?')) return;
+    CHECKS = {};
+    saveChecks(CHECKS);
+    renderLogTable();
+    updateProgress();
+    showToast('Semua data pemeriksaan direset');
+  });
+
+  // ===== Download Excel =====
+  document.getElementById('btnDownload').addEventListener('click', async () => {
+    const btn = document.getElementById('btnDownload');
+    const hint = document.getElementById('downloadHint');
+    btn.disabled = true;
+    hint.textContent = 'Membuat file Excel...';
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const ws = workbook.addWorksheet('DATA FSS & APAR');
+
+      const headers1 = ['No','RUANGAN','GEDUNG','LANTAI','MERK','KAPASITAS','JENIS GAS','kode','QRkode','KONDISI','','','','','','','KETERANGAN','FOTO','TANGGAL PERIKSA','STATUS TUGAS'];
+      const headers2 = ['','','','','','','','','', 'Kebersihan Tabung APAR','Pemeriksaan Indikator Tekanan','Pemeriksaan    Kunci Pengaman','Pemeriksaan Selang Semprot','Pemeriksaan Nozzle','TAG Label Pemeliharaan','EVIDEN','','','',''];
+
+      ws.addRow(headers1);
+      ws.addRow(headers2);
+
+      const mergeCols = ['A','B','C','D','E','F','G','H','I','Q','R','S','T'];
+      mergeCols.forEach(c => ws.mergeCells(`${c}1:${c}2`));
+      ws.mergeCells('J1:P1');
+
+      [1,2].forEach(r => {
+        ws.getRow(r).eachCell(cell => {
+          cell.font = { bold: true, name: 'Arial', size: 10 };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } };
+          cell.border = { top:{style:'thin'}, left:{style:'thin'}, bottom:{style:'thin'}, right:{style:'thin'} };
+        });
+      });
+
+      const colWidths = [5,26,12,8,10,10,20,8,9,14,16,16,16,14,16,10,26,12,18,14];
+      colWidths.forEach((w, i) => { ws.getColumn(i+1).width = w; });
+
+      let rowIdx = 3;
+      for (let i = 0; i < APAR_DATA.length; i++) {
+        const item = APAR_DATA[i];
+        const entry = CHECKS[item.kode] || {};
+        const k = entry.kondisi || {};
+        const selesai = isSelesai(entry);
+
+        const row = ws.addRow([
+          i + 1,
+          item.ruangan || '',
+          item.gedung || '',
+          item.lantai || '',
+          item.merk || '',
+          item.kapasitas || '',
+          item.jenisGas || '',
+          item.kode,
+          item.kode,
+          k.kebersihan || '-',
+          k.indikator || '-',
+          k.kunci || '-',
+          k.selang || '-',
+          k.nozzle || '-',
+          k.tag || '-',
+          k.eviden || '-',
+          entry.keterangan || '',
+          '',
+          entry.tanggal || '-',
+          selesai ? '✅ Selesai' : 'Belum',
+        ]);
+        row.eachCell(cell => {
+          cell.font = { name: 'Arial', size: 10 };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.border = { top:{style:'thin'}, left:{style:'thin'}, bottom:{style:'thin'}, right:{style:'thin'} };
+        });
+        row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+        row.getCell(17).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+
+        // Sisipkan foto (jika ada) di kolom FOTO (R = kolom 18)
+        if (entry.foto) {
+          try {
+            const match = entry.foto.match(/^data:image\/(png|jpeg|jpg);base64,/);
+            const ext = match ? (match[1] === 'jpg' ? 'jpeg' : match[1]) : 'jpeg';
+            const base64Data = entry.foto.split(',')[1];
+            const imgId = workbook.addImage({ base64: base64Data, extension: ext });
+            ws.addImage(imgId, {
+              tl: { col: 17.05, row: rowIdx - 1 + 0.05 },
+              ext: { width: 60, height: 60 },
+            });
+            row.height = 46;
+          } catch (e) { /* lewati jika gagal embed foto */ }
+        }
+        rowIdx++;
+      }
+
+      ws.views = [{ state: 'frozen', ySplit: 2 }];
+
+      const buf = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/octet-stream' });
+      const tgl = new Date().toISOString().slice(0,10);
+      saveAs(blob, `DATA_FSS_APAR_${tgl}.xlsx`);
+      hint.textContent = 'File berhasil diunduh.';
+    } catch (err) {
+      hint.textContent = 'Gagal membuat file: ' + err;
+      showToast('Gagal membuat file Excel', true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ===== Init =====
+  renderLogTable();
+  updateProgress();
+</script>
+
+</body>
+</html>
