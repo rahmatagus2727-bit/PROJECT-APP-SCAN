@@ -24,40 +24,47 @@
   <div id="authScreen" class="auth-wrapper">
     <div class="card">
       <div class="auth-header">
-        <div class="auth-logo">🧯</div>
+        <div class="auth-logo-badge">🧯</div>
         <h1>Portal Petugas APAR</h1>
         <p>Silakan masuk atau buat akun petugas untuk memulai pemeriksaan &amp; sinkronisasi data.</p>
       </div>
 
-      <div class="auth-tabs">
-        <button type="button" id="tabAuthLogin" class="auth-tab-btn active">Masuk (Login)</button>
-        <button type="button" id="tabAuthRegister" class="auth-tab-btn">Daftar Akun</button>
+      <!-- Segmented Tab Navigation -->
+      <div class="auth-segmented-control">
+        <button type="button" id="tabAuthLogin" class="auth-tab-item active">Masuk (Login)</button>
+        <button type="button" id="tabAuthRegister" class="auth-tab-item">Daftar Akun</button>
       </div>
 
       <form id="authForm">
-        <div id="regNameGroup" class="hidden">
+        <div id="regNameGroup" class="form-group hidden">
           <label for="authName">Nama Lengkap Petugas</label>
           <input type="text" id="authName" placeholder="Contoh: Rahmat Agus" autocomplete="name" />
         </div>
 
-        <label for="authEmail">Email Petugas</label>
-        <input type="email" id="authEmail" placeholder="petugas@apar.id" required autocomplete="email" />
-
-        <label for="authPassword">Kata Sandi (Password)</label>
-        <div class="password-wrapper">
-          <input type="password" id="authPassword" placeholder="Minimal 6 karakter" required autocomplete="current-password" />
-          <button type="button" id="btnTogglePassword" class="password-toggle-btn" title="Lihat password">👁️</button>
+        <div class="form-group">
+          <label for="authEmail">Email Petugas</label>
+          <input type="email" id="authEmail" placeholder="petugas@apar.id" required autocomplete="email" />
         </div>
 
-        <button type="submit" id="btnAuthSubmit">🔑 Masuk ke Aplikasi</button>
+        <div class="form-group">
+          <label for="authPassword">Kata Sandi (Password)</label>
+          <div class="password-box">
+            <input type="password" id="authPassword" placeholder="Minimal 6 karakter" required autocomplete="current-password" />
+            <button type="button" id="btnTogglePassword" class="password-eye-btn" title="Lihat/Sembunyikan password">👁️</button>
+          </div>
+        </div>
+
+        <button type="submit" id="btnAuthSubmit" class="btn btn-primary" style="margin-top: 14px;">
+          🔑 Masuk ke Aplikasi
+        </button>
       </form>
 
       <div class="auth-divider"><span>ATAU</span></div>
 
-      <button type="button" id="btnGuestLogin" class="ghost">
+      <button type="button" id="btnGuestLogin" class="btn btn-ghost">
         ⚡ Masuk Cepat (Mode Lapangan / Tamu)
       </button>
-      <p class="hint" style="text-align: center; margin-top: 10px;">
+      <p class="hint" style="text-align: center; margin-top: 12px; font-size: 0.78rem;">
         Mode Lapangan memungkinkan inspeksi langsung dan tersimpan di memori perangkat / cloud saat terhubung.
       </p>
     </div>
@@ -128,14 +135,16 @@
           <h2><span>🔍</span> Scan Barcode / QR Alat</h2>
           <p class="hint">Arahkan kamera ke stiker QR APAR. Data otomatis muncul dan siap diisi checklist kondisi fisik.</p>
           
-          <button type="button" id="btnStart">📷 Buka Kamera Scan QR</button>
+          <button type="button" id="btnStart" class="btn btn-primary" style="margin-top: 10px;">
+            📷 Buka Kamera Scan QR
+          </button>
           <div id="reader" class="hidden"></div>
 
-          <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+          <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
             <label for="manualKode">Atau Ketik Kode Alat Manual</label>
             <div style="display: flex; gap: 8px;">
               <input type="text" id="manualKode" placeholder="Contoh: 110" inputmode="numeric" />
-              <button type="button" id="btnCariManual" class="secondary small" style="width: auto; min-width: 80px;">Cari</button>
+              <button type="button" id="btnCariManual" class="btn btn-secondary btn-sm" style="flex-shrink: 0; min-width: 80px;">Cari</button>
             </div>
           </div>
 
@@ -162,17 +171,17 @@
           <textarea id="keteranganInput" placeholder="Tuliskan catatan hasil pemeriksaan atau temuan khusus (opsional)"></textarea>
 
           <div class="foto-upload-box">
-            <label style="margin-top: 0;">📷 Bukti Foto (EVIDEN)</label>
+            <label style="margin-top: 0; margin-bottom: 8px;">📷 Bukti Foto (EVIDEN)</label>
             <div class="foto-btn-row">
-              <button type="button" id="btnUploadFoto" class="secondary small" style="flex:1;">📷 Ambil / Upload Foto</button>
-              <button type="button" id="btnHapusFoto" class="danger small hidden" style="flex:1;">🗑️ Hapus Foto</button>
+              <button type="button" id="btnUploadFoto" class="btn btn-secondary btn-sm" style="flex:1;">📷 Ambil / Upload Foto</button>
+              <button type="button" id="btnHapusFoto" class="btn btn-danger btn-sm hidden" style="flex:1;">🗑️ Hapus Foto</button>
             </div>
             <input type="file" id="fotoInput" accept="image/*" capture="environment" class="hidden" />
             <img id="fotoPreview" class="foto-preview" alt="Preview bukti foto" />
           </div>
 
-          <button type="button" id="btnSimpan">✅ Simpan Hasil Pemeriksaan</button>
-          <button type="button" id="btnScanLagi" class="ghost" style="margin-top: 8px;">🔄 Scan Alat Lain</button>
+          <button type="button" id="btnSimpan" class="btn btn-primary">✅ Simpan Hasil Pemeriksaan</button>
+          <button type="button" id="btnScanLagi" class="btn btn-ghost" style="margin-top: 8px;">🔄 Scan Alat Lain</button>
         </div>
 
       </div>
@@ -220,9 +229,9 @@
           <!-- Export & Data Tools Card -->
           <div class="card">
             <h2><span>💾</span> Ekspor &amp; Manajemen Data</h2>
-            <p class="hint">Unduh file Excel berisi data FSS &amp; APAR lengkap dengan kolom checklist KONDISI, nama pemeriksa, catatan, dan foto bukti pemeriksaan.</p>
-            <button type="button" id="btnDownload" class="secondary">⬇️ Download Rekap Excel (.xlsx)</button>
-            <button type="button" id="btnResetLog" class="danger" style="margin-top: 10px;">🗑️ Reset Riwayat Pemeriksaan</button>
+            <p class="hint" style="margin-bottom: 14px;">Unduh file Excel berisi data FSS &amp; APAR lengkap dengan kolom checklist KONDISI, nama pemeriksa, catatan, dan foto bukti pemeriksaan.</p>
+            <button type="button" id="btnDownload" class="btn btn-secondary">⬇️ Download Rekap Excel (.xlsx)</button>
+            <button type="button" id="btnResetLog" class="btn btn-danger" style="margin-top: 10px;">🗑️ Reset Riwayat Pemeriksaan</button>
           </div>
 
         </div>
@@ -305,7 +314,6 @@ function showStatus(msg, type = 'info') {
 }
 
 const dbStatusEl = document.getElementById('dbStatus');
-const dbStatusText = document.getElementById('dbStatusText');
 
 function setDbStatus(mode, text) {
   if (!dbStatusEl) return;
@@ -384,7 +392,7 @@ function initFirebase() {
       if (user) {
         setLoggedInUser({
           email: user.email || 'petugas@apar.id',
-          name: user.displayName || user.email ? user.email.split('@')[0] : 'Petugas'
+          name: user.displayName || (user.email ? user.email.split('@')[0] : 'Petugas')
         });
       } else {
         const localUser = localStorage.getItem('apar_current_user');
