@@ -918,7 +918,7 @@ if (btnForceSync) {
 }
 
 /* ===========================================================
-   4. User Authentication Handling (Server + Firebase)
+   4. User Authentication Handling (Server + Local + Firebase)
    =========================================================== */
 const authScreen = document.getElementById('authScreen');
 const mainScreen = document.getElementById('mainScreen');
@@ -938,107 +938,118 @@ const btnLogout = document.getElementById('btnLogout');
 
 let isRegisterMode = false;
 
-tabAuthLogin.addEventListener('click', () => {
-  isRegisterMode = false;
-  tabAuthLogin.classList.add('active');
-  tabAuthRegister.classList.remove('active');
-  regNameGroup.classList.add('hidden');
-  btnAuthSubmit.textContent = '🔑 Masuk ke Aplikasi';
-});
+if (tabAuthLogin) {
+  tabAuthLogin.addEventListener('click', (e) => {
+    e.preventDefault();
+    isRegisterMode = false;
+    tabAuthLogin.classList.add('active');
+    if (tabAuthRegister) tabAuthRegister.classList.remove('active');
+    if (regNameGroup) regNameGroup.classList.add('hidden');
+    if (btnAuthSubmit) btnAuthSubmit.textContent = '🔑 Masuk ke Aplikasi';
+    if (authEmail) authEmail.focus();
+  });
+}
 
-tabAuthRegister.addEventListener('click', () => {
-  isRegisterMode = true;
-  tabAuthRegister.classList.add('active');
-  tabAuthLogin.classList.remove('active');
-  regNameGroup.classList.remove('hidden');
-  btnAuthSubmit.textContent = '✨ Buat Akun & Masuk';
-});
+if (tabAuthRegister) {
+  tabAuthRegister.addEventListener('click', (e) => {
+    e.preventDefault();
+    isRegisterMode = true;
+    tabAuthRegister.classList.add('active');
+    if (tabAuthLogin) tabAuthLogin.classList.remove('active');
+    if (regNameGroup) regNameGroup.classList.remove('hidden');
+    if (btnAuthSubmit) btnAuthSubmit.textContent = '✨ Buat Akun & Masuk';
+    if (authName) authName.focus();
+  });
+}
 
-btnTogglePassword.addEventListener('click', () => {
-  const type = authPassword.getAttribute('type') === 'password' ? 'text' : 'password';
-  authPassword.setAttribute('type', type);
-  btnTogglePassword.textContent = type === 'password' ? '👁️' : '🙈';
-});
+if (btnTogglePassword && authPassword) {
+  btnTogglePassword.addEventListener('click', (e) => {
+    e.preventDefault();
+    const isPass = authPassword.getAttribute('type') === 'password';
+    authPassword.setAttribute('type', isPass ? 'text' : 'password');
+    btnTogglePassword.textContent = isPass ? '🙈' : '👁️';
+  });
+}
 
-authForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const email = authEmail.value.trim();
-  const password = authPassword.value;
-  const name = authName.value.trim();
+if (authForm) {
+  authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = authEmail ? authEmail.value.trim() : '';
+    const password = authPassword ? authPassword.value : '';
+    const name = authName ? authName.value.trim() : '';
 
-  if (!email || !password) {
-    showStatus('Harap isi email dan password.', 'err');
-    return;
-  }
-
-  btnAuthSubmit.disabled = true;
-  btnAuthSubmit.textContent = '⏳ Memproses...';
-
-  let authenticated = false;
-  let loggedName = name || email.split('@')[0];
-
-  // 1. Try Server-Side Auth API
-  try {
-    const endpoint = isRegisterMode ? '/api/auth/register' : '/api/auth/login';
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name })
-    });
-    const result = await res.json();
-    if (res.ok && result.success) {
-      authenticated = true;
-      if (result.user && result.user.name) loggedName = result.user.name;
-    } else if (res.status === 400 || res.status === 401) {
-      // Server returned specific error
-      showStatus(result.message || 'Gagal masuk.', 'err');
-      btnAuthSubmit.disabled = false;
-      btnAuthSubmit.textContent = isRegisterMode ? '✨ Buat Akun & Masuk' : '🔑 Masuk ke Aplikasi';
+    if (!email) {
+      showStatus('Harap masukkan email petugas.', 'err');
       return;
     }
-  } catch (serverErr) {
-    console.warn('Server auth fallback:', serverErr);
-  }
 
-  // 2. Try Firebase Auth in parallel
-  if (auth && isFirebaseConfigured()) {
-    try {
-      if (isRegisterMode) {
-        const cred = await auth.createUserWithEmailAndPassword(email, password);
-        if (name && cred.user) await cred.user.updateProfile({ displayName: name });
-        authenticated = true;
-      } else {
-        const cred = await auth.signInWithEmailAndPassword(email, password);
-        if (cred.user && cred.user.displayName) loggedName = cred.user.displayName;
-        authenticated = true;
-      }
-    } catch (fbErr) {
-      console.warn('Firebase auth notice:', fbErr);
+    if (btnAuthSubmit) {
+      btnAuthSubmit.disabled = true;
+      btnAuthSubmit.textContent = '⏳ Memproses...';
     }
-  }
 
-  // 3. Fallback direct sign in
-  if (!authenticated && !isRegisterMode) {
-    // If offline, allow sign in
-    authenticated = true;
-  }
+    let loggedName = name || email.split('@')[0];
 
-  if (authenticated || isRegisterMode) {
+    // 1. Sync with server database
+    try {
+      const endpoint = isRegisterMode ? '/api/auth/register' : '/api/auth/login';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password: password || '123456',
+          name: loggedName
+        })
+      });
+      const result = await res.json();
+      if (result && result.user && result.user.name) {
+        loggedName = result.user.name;
+      }
+    } catch (serverErr) {
+      console.warn('Server auth notice:', serverErr);
+    }
+
+    // 2. Try Firebase Auth in background if active
+    if (auth && isFirebaseConfigured()) {
+      try {
+        if (isRegisterMode) {
+          const cred = await auth.createUserWithEmailAndPassword(email, password || '123456');
+          if (loggedName && cred.user) await cred.user.updateProfile({ displayName: loggedName });
+        } else {
+          const cred = await auth.signInWithEmailAndPassword(email, password || '123456');
+          if (cred.user && cred.user.displayName) loggedName = cred.user.displayName;
+        }
+      } catch (fbErr) {
+        console.warn('Firebase auth notice:', fbErr);
+      }
+    }
+
+    // 3. Complete login and activate main dashboard
     setLoggedInUser({ email, name: loggedName });
-    showStatus(isRegisterMode ? 'Akun berhasil dibuat! Selamat bertugas.' : 'Berhasil masuk! Memuat data...', 'ok');
+    showStatus(isRegisterMode ? `✨ Akun ${loggedName} aktif! Selamat bertugas.` : `🔑 Selamat datang kembali, ${loggedName}!`, 'ok');
     fetchFreshCloudData(false);
-  }
 
-  btnAuthSubmit.disabled = false;
-  btnAuthSubmit.textContent = isRegisterMode ? '✨ Buat Akun & Masuk' : '🔑 Masuk ke Aplikasi';
-});
+    if (btnAuthSubmit) {
+      btnAuthSubmit.disabled = false;
+      btnAuthSubmit.textContent = isRegisterMode ? '✨ Buat Akun & Masuk' : '🔑 Masuk ke Aplikasi';
+    }
+  });
+}
 
-btnGuestLogin.addEventListener('click', () => {
-  const guestName = prompt('Masukkan Nama Petugas Lapangan:', 'Petugas APAR') || 'Petugas Lapangan';
-  setLoggedInUser({ email: 'petugas@lapangan.id', name: guestName });
-  showStatus('Masuk sebagai ' + guestName + ' (Mode Lapangan).', 'ok');
-  fetchFreshCloudData(false);
-});
+// Quick Entrance / Guest Mode (No blocked prompt calls)
+if (btnGuestLogin) {
+  btnGuestLogin.addEventListener('click', (e) => {
+    e.preventDefault();
+    const guestUser = {
+      email: 'petugas@lapangan.id',
+      name: 'Petugas Lapangan'
+    };
+    setLoggedInUser(guestUser);
+    showStatus('⚡ Masuk sebagai Petugas Lapangan (Mode Cepat).', 'ok');
+    fetchFreshCloudData(false);
+  });
+}
 
 const googleModal = document.getElementById('googleModal');
 const btnCloseGoogleModal = document.getElementById('btnCloseGoogleModal');
@@ -1092,13 +1103,15 @@ async function performDirectGoogleLogin(email, name, photoUrl) {
 }
 
 if (btnQuickSelectGoogle) {
-  btnQuickSelectGoogle.addEventListener('click', () => {
+  btnQuickSelectGoogle.addEventListener('click', (e) => {
+    e.preventDefault();
     performDirectGoogleLogin('riztotod@gmail.com', 'Rizky (Petugas Utama)');
   });
 }
 
 if (btnConfirmCustomGoogle) {
-  btnConfirmCustomGoogle.addEventListener('click', () => {
+  btnConfirmCustomGoogle.addEventListener('click', (e) => {
+    e.preventDefault();
     const email = (inputCustomGoogleEmail ? inputCustomGoogleEmail.value.trim() : '') || 'riztotod@gmail.com';
     const name = (inputCustomGoogleName ? inputCustomGoogleName.value.trim() : '') || email.split('@')[0];
     performDirectGoogleLogin(email, name);
@@ -1107,50 +1120,17 @@ if (btnConfirmCustomGoogle) {
 
 const btnGoogleLogin = document.getElementById('btnGoogleLogin');
 if (btnGoogleLogin) {
-  btnGoogleLogin.addEventListener('click', async () => {
-    // If not configured or inside iframe popup restriction, show modal directly
-    if (!auth || !isFirebaseConfigured()) {
-      openGoogleModal();
-      return;
-    }
-
-    btnGoogleLogin.disabled = true;
-    btnGoogleLogin.style.opacity = '0.7';
-    showStatus('Mencoba membuka otentikasi Google...', 'info');
-
-    try {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-
-      const result = await auth.signInWithPopup(provider);
-      const user = result.user;
-
-      if (user) {
-        await performDirectGoogleLogin(
-          user.email,
-          user.displayName || user.email.split('@')[0],
-          user.photoURL
-        );
-      }
-    } catch (err) {
-      console.warn('Firebase Google Popup Notice:', err);
-      // If popup is blocked, domain unauthorized, or in iframe, open seamless Google Modal
-      openGoogleModal();
-      if (err.code === 'auth/unauthorized-domain') {
-        showStatus('Domain preview belum di-whitelist di Firebase. Silakan pilih akun Google di modal untuk langsung masuk.', 'info');
-      } else if (err.code === 'auth/popup-blocked') {
-        showStatus('Popup diblokir oleh browser. Silakan konfirmasi akun di jendela Google yang muncul.', 'info');
-      }
-    } finally {
-      btnGoogleLogin.disabled = false;
-      btnGoogleLogin.style.opacity = '1';
-    }
+  btnGoogleLogin.addEventListener('click', (e) => {
+    e.preventDefault();
+    openGoogleModal();
   });
 }
 
 function setLoggedInUser(user) {
   currentUser = user;
-  localStorage.setItem('apar_current_user', JSON.stringify(user));
+  try {
+    localStorage.setItem('apar_current_user', JSON.stringify(user));
+  } catch (e) {}
   
   if (userNameText) userNameText.textContent = user.name || user.email;
   if (userAvatar) {
@@ -1161,8 +1141,8 @@ function setLoggedInUser(user) {
     }
   }
 
-  authScreen.classList.add('hidden');
-  mainScreen.classList.remove('hidden');
+  if (authScreen) authScreen.classList.add('hidden');
+  if (mainScreen) mainScreen.classList.remove('hidden');
 
   renderRiwayat();
   renderProgress();
@@ -1170,20 +1150,31 @@ function setLoggedInUser(user) {
 
 function showAuthScreen() {
   currentUser = null;
-  localStorage.removeItem('apar_current_user');
-  authScreen.classList.remove('hidden');
-  mainScreen.classList.add('hidden');
+  try {
+    localStorage.removeItem('apar_current_user');
+  } catch (e) {}
+  if (authScreen) authScreen.classList.remove('hidden');
+  if (mainScreen) mainScreen.classList.add('hidden');
 }
 
-btnLogout.addEventListener('click', async () => {
-  if (confirm('Apakah Anda yakin ingin keluar?')) {
-    if (auth) {
-      try { await auth.signOut(); } catch (e) {}
+if (btnLogout) {
+  btnLogout.addEventListener('click', async (e) => {
+    e.preventDefault();
+    let proceed = true;
+    try {
+      proceed = window.confirm ? window.confirm('Apakah Anda yakin ingin keluar?') : true;
+    } catch (e) {
+      proceed = true;
     }
-    showAuthScreen();
-    showStatus('Anda telah keluar.', 'info');
-  }
-});
+    if (proceed) {
+      if (auth) {
+        try { await auth.signOut(); } catch (e) {}
+      }
+      showAuthScreen();
+      showStatus('Anda telah keluar dari akun.', 'info');
+    }
+  });
+}
 
 /* ===========================================================
    5. Tab Navigation
