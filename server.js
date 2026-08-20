@@ -62,6 +62,7 @@ function createTables(db) {
       email TEXT UNIQUE,
       name TEXT,
       password TEXT,
+      role TEXT DEFAULT 'petugas',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -124,19 +125,30 @@ function restoreFromBackups(db) {
     console.warn('JSON to SQLite migration notice:', migErr);
   }
 
-  // Migrate users if empty
+  // Ensure role column exists and migrate/seed default users
   try {
+    try {
+      db.run("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'petugas'");
+    } catch (e) {}
+
     const userCheck = db.exec("SELECT COUNT(*) as count FROM users");
     const userCount = userCheck[0]?.values[0]?.[0] || 0;
-    if (userCount === 0 && fs.existsSync(USERS_FILE)) {
-      const raw = fs.readFileSync(USERS_FILE, 'utf-8');
-      const jsonUsers = JSON.parse(raw) || [];
-      jsonUsers.forEach(u => {
-        db.run(`INSERT OR IGNORE INTO users (id, email, name, password, created_at) VALUES (?, ?, ?, ?, ?)`,
-          [u.id, u.email, u.name, u.password, u.createdAt || new Date().toISOString()]);
-      });
-    }
-  } catch (uErr) {}
+    
+    // Always ensure Admin and initial petugas exist
+    const defaultUsers = [
+      { id: 'user_admin', email: 'admin@apar.id', name: 'Admin K3 / Pemeliharaan', password: 'admin', role: 'admin' },
+      { id: 'user_rizky', email: 'rizky@apar.id', name: 'Rizky (Petugas Utama)', password: '123', role: 'petugas' },
+      { id: 'user_petugas1', email: 'petugas1@apar.id', name: 'Petugas Lapangan 1', password: '123', role: 'petugas' },
+      { id: 'user_petugas2', email: 'petugas2@apar.id', name: 'Petugas Lapangan 2', password: '123', role: 'petugas' }
+    ];
+
+    defaultUsers.forEach(u => {
+      db.run(`INSERT OR IGNORE INTO users (id, email, name, password, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        [u.id, (u.email || u.name).toLowerCase(), u.name, u.password || '123', u.role || 'petugas', u.createdAt || new Date().toISOString()]);
+    });
+  } catch (uErr) {
+    console.warn('User setup warning:', uErr);
+  }
 }
 
 async function rebuildCorruptedDatabase() {
@@ -478,7 +490,7 @@ app.post('/api/apar_log', (req, res) => {
 
   const logs = getAllInspectionsFromSqlite();
 
-  // Instant broadcast to all connected devices in realtime
+  // Instant broadcast to all connected devices in realtime via SSE
   broadcastUpdate({
     type: 'update',
     docId,
@@ -487,9 +499,21 @@ app.post('/api/apar_log', (req, res) => {
     timestamp: Date.now()
   });
 
+  // Background Automatic Sync to Google Sheets & Drive (Single Centralized Database)
+  const targetScriptUrl = APP_SETTINGS.googleScriptUrl || '';
+  if (targetScriptUrl && targetScriptUrl.startsWith('http')) {
+    callGoogleAppsScript(targetScriptUrl, entry)
+      .then(gasRes => {
+        console.log(`⚡ Auto-synced inspection ${docId} to Google Sheets. OK:`, gasRes.ok);
+      })
+      .catch(gasErr => {
+        console.warn(`⚠️ Background Google Sheets sync error for ${docId}:`, gasErr.message);
+      });
+  }
+
   res.json({
     success: true,
-    message: 'Data berhasil disimpan ke database SQLite dan disiarkan secara real-time.',
+    message: 'Data berhasil disimpan ke database SQLite, disiarkan secara real-time, dan disinkronkan ke Google Sheets.',
     docId,
     totalLogs: Object.keys(logs).length
   });
@@ -558,94 +582,209 @@ app.get('/api/db/download', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// User Authentication Endpoints (SQLite Powered)
+// User Authentication & Management Endpoints (SQLite Powered)
 // -------------------------------------------------------------
-app.post('/api/auth/register', (req, res) => {
-  const { email, password, name } = req.body;
-  if (!email) {
-    return res.status(400).json({ success: false, message: 'Email wajib diisi.' });
+app.get('/api/users', (req, res) => {
+  if (!sqliteDb) {
+    return res.json({ success: true, users: [] });
+  }
+  try {
+    const resUsers = sqliteDb.exec("SELECT id, email, name, role, created_at FROM users ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC");
+    if (!resUsers || !resUsers[0]) {
+      return res.json({ success: true, users: [] });
+    }
+    const list = resUsers[0].values.map(([id, email, name, role, created_at]) => ({
+      id,
+      email,
+      name: name || email,
+      role: role || (id === 'user_admin' ? 'admin' : 'petugas'),
+      created_at
+    }));
+    res.json({ success: true, users: list });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/users', (req, res) => {
+  const { name, email, password, role } = req.body;
+  if (!name && !email) {
+    return res.status(400).json({ success: false, message: 'Nama atau ID Petugas wajib diisi.' });
   }
 
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanName = name ? name.trim() : cleanEmail.split('@')[0];
-  const cleanPass = password ? String(password) : '123456';
+  const cleanName = (name || email).trim();
+  const cleanEmail = (email || `${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '_')}@apar.id`).trim().toLowerCase();
+  const cleanPass = password ? String(password).trim() : '123';
+  const cleanRole = (role === 'admin' || cleanName.toLowerCase().includes('admin')) ? 'admin' : 'petugas';
+  const newId = 'user_' + Date.now();
+
+  if (sqliteDb) {
+    try {
+      sqliteDb.run("INSERT OR REPLACE INTO users (id, email, name, password, role) VALUES (?, ?, ?, ?, ?)", [
+        newId, cleanEmail, cleanName, cleanPass, cleanRole
+      ]);
+      persistSqliteToDisk();
+
+      // Update USERS_FILE
+      try {
+        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users");
+        if (all && all[0]) {
+          const list = all[0].values.map(([id, email, name, password, role, created_at]) => ({
+            id, email, name, password, role, created_at
+          }));
+          fs.writeFileSync(USERS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+        }
+      } catch (e) {}
+
+      return res.json({
+        success: true,
+        message: `Akun "${cleanName}" (${cleanRole}) berhasil dibuat.`,
+        user: { id: newId, email: cleanEmail, name: cleanName, role: cleanRole }
+      });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  res.status(500).json({ success: false, message: 'Database server belum siap.' });
+});
+
+app.delete('/api/users/:id', (req, res) => {
+  const userId = req.params.id;
+  if (!userId) {
+    return res.status(400).json({ success: false, message: 'ID Petugas wajib disertakan.' });
+  }
+
+  if (userId === 'user_admin' || userId.toLowerCase().includes('admin')) {
+    return res.status(400).json({ success: false, message: 'Akun Admin utama tidak boleh dihapus.' });
+  }
+
+  if (sqliteDb) {
+    try {
+      sqliteDb.run("DELETE FROM users WHERE id = ? OR email = ?", [userId, userId]);
+      persistSqliteToDisk();
+
+      // Update USERS_FILE
+      try {
+        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users");
+        if (all && all[0]) {
+          const list = all[0].values.map(([id, email, name, password, role, created_at]) => ({
+            id, email, name, password, role, created_at
+          }));
+          fs.writeFileSync(USERS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+        }
+      } catch (e) {}
+
+      return res.json({ success: true, message: 'Akun petugas berhasil dihapus.' });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  res.status(500).json({ success: false, message: 'Database server belum siap.' });
+});
+
+app.post('/api/auth/register', (req, res) => {
+  const { email, password, name, role } = req.body;
+  if (!email && !name) {
+    return res.status(400).json({ success: false, message: 'Nama atau email petugas wajib diisi.' });
+  }
+
+  const cleanName = name ? name.trim() : (email ? email.split('@')[0] : 'Petugas');
+  const cleanEmail = email ? email.trim().toLowerCase() : `${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '_')}@apar.id`;
+  const cleanPass = password ? String(password).trim() : '123';
+  const cleanRole = role || 'petugas';
   
   if (sqliteDb) {
     try {
-      const existing = sqliteDb.exec("SELECT id FROM users WHERE lower(email) = ?", [cleanEmail]);
+      const existing = sqliteDb.exec("SELECT id FROM users WHERE lower(email) = ? OR lower(name) = ?", [cleanEmail, cleanName.toLowerCase()]);
       if (existing && existing[0] && existing[0].values.length > 0) {
-        // Update user
-        sqliteDb.run("UPDATE users SET name = ?, password = ? WHERE lower(email) = ?", [
-          cleanName, cleanPass, cleanEmail
+        sqliteDb.run("UPDATE users SET name = ?, password = ?, role = ? WHERE lower(email) = ?", [
+          cleanName, cleanPass, cleanRole, cleanEmail
         ]);
       } else {
         const newId = 'user_' + Date.now();
-        sqliteDb.run("INSERT INTO users (id, email, name, password) VALUES (?, ?, ?, ?)", [
-          newId, cleanEmail, cleanName, cleanPass
+        sqliteDb.run("INSERT INTO users (id, email, name, password, role) VALUES (?, ?, ?, ?, ?)", [
+          newId, cleanEmail, cleanName, cleanPass, cleanRole
         ]);
       }
       persistSqliteToDisk();
 
       return res.json({
         success: true,
-        message: 'Akun berhasil didaftarkan.',
-        user: { email: cleanEmail, name: cleanName }
+        message: 'Akun petugas aktif.',
+        user: { email: cleanEmail, name: cleanName, role: cleanRole }
       });
     } catch (dbErr) {
       console.warn('Register db warning:', dbErr);
     }
   }
 
-  return res.json({
-    success: true,
-    message: 'Akun aktif.',
-    user: { email: cleanEmail, name: cleanName }
-  });
+  return res.status(500).json({ success: false, message: 'Database server belum siap.' });
 });
 
 app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  if (!email) {
-    return res.status(400).json({ success: false, message: 'Email wajib diisi.' });
+  const { identifier, email, username, password } = req.body;
+  const inputId = (identifier || email || username || '').trim();
+  const inputPass = password ? String(password).trim() : '';
+
+  if (!inputId) {
+    return res.status(400).json({ success: false, message: 'Nama atau ID Pengguna wajib diisi.' });
+  }
+  if (!inputPass) {
+    return res.status(400).json({ success: false, message: 'PIN / Kata Sandi wajib diisi.' });
   }
 
-  const cleanEmail = email.trim().toLowerCase();
-  const cleanPass = password ? String(password) : '123456';
+  const cleanInput = inputId.toLowerCase();
   
   if (sqliteDb) {
     try {
-      const check = sqliteDb.exec("SELECT id, email, name, password FROM users WHERE lower(email) = ?", [cleanEmail]);
+      // Find user by email, name, id, or username prefix (case-insensitive)
+      const check = sqliteDb.exec(
+        `SELECT id, email, name, password, role FROM users 
+         WHERE lower(email) = ? 
+            OR lower(name) = ? 
+            OR lower(id) = ?
+            OR lower(email) = ?
+            OR ('user_' || lower(?)) = lower(id)
+            OR lower(name) LIKE ?
+         LIMIT 1`,
+        [cleanInput, cleanInput, cleanInput, cleanInput + '@apar.id', cleanInput, cleanInput + '%']
+      );
+
       if (!check || !check[0] || check[0].values.length === 0) {
-        // Auto-register user on login so they are never blocked
-        const newId = 'user_' + Date.now();
-        const cleanName = cleanEmail.split('@')[0];
-        sqliteDb.run("INSERT INTO users (id, email, name, password) VALUES (?, ?, ?, ?)", [
-          newId, cleanEmail, cleanName, cleanPass
-        ]);
-        persistSqliteToDisk();
-        return res.json({
-          success: true,
-          message: 'Login berhasil.',
-          user: { email: cleanEmail, name: cleanName }
+        // STRICT: User does not exist! Reject!
+        return res.status(401).json({
+          success: false,
+          message: 'Akun tidak ditemukan! Pastikan Nama/ID benar atau hubungi Admin untuk didaftarkan.'
         });
       }
 
-      const [id, uEmail, uName, uPass] = check[0].values[0];
+      const [id, uEmail, uName, uPass, uRole] = check[0].values[0];
+      const savedPass = String(uPass || '').trim();
+
+      // STRICT password verification
+      if (savedPass !== inputPass) {
+        return res.status(401).json({
+          success: false,
+          message: 'Kata sandi atau PIN salah! Silakan periksa kembali.'
+        });
+      }
+
+      const effectiveRole = uRole || (id === 'user_admin' || String(uName).toLowerCase().includes('admin') ? 'admin' : 'petugas');
+
       return res.json({
         success: true,
-        message: 'Login berhasil.',
-        user: { email: uEmail, name: uName || cleanEmail.split('@')[0] }
+        message: `Login berhasil sebagai ${effectiveRole === 'admin' ? 'Admin' : 'Petugas'}.`,
+        user: { id, email: uEmail, name: uName || inputId, role: effectiveRole }
       });
     } catch (dbErr) {
       console.warn('Login db warning:', dbErr);
+      return res.status(500).json({ success: false, message: 'Terjadi kesalahan sistem saat login.' });
     }
   }
 
-  return res.json({
-    success: true,
-    message: 'Login berhasil.',
-    user: { email: cleanEmail, name: cleanEmail.split('@')[0] }
-  });
+  return res.status(500).json({ success: false, message: 'Database server belum siap.' });
 });
 
 // -------------------------------------------------------------
