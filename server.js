@@ -499,7 +499,7 @@ app.post('/api/gdrive/config', (req, res) => {
   });
 });
 
-// Helper function to reliably call Google Apps Script webhook without 405 redirect issues
+// Helper function to reliably call Google Apps Script webhook
 async function callGoogleAppsScript(targetUrl, payload) {
   const bodyStr = JSON.stringify(payload);
 
@@ -512,98 +512,30 @@ async function callGoogleAppsScript(targetUrl, payload) {
     cleanUrl = cleanUrl.replace(/\/dev(\?.*)?$/, '/exec$1');
   }
 
-  // Method 1: Try POST request with manual redirect handling (Google 302 -> GET echo flow)
   try {
-    let currentUrl = cleanUrl;
-    let method = 'POST';
-    let body = bodyStr;
-    let headers = {
-      'Content-Type': 'text/plain;charset=utf-8'
+    const response = await fetch(cleanUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: bodyStr,
+      redirect: 'follow'
+    });
+
+    const text = await response.text();
+    return {
+      status: response.status,
+      ok: response.ok,
+      text: text
     };
-
-    let redirectCount = 0;
-    while (redirectCount < 5) {
-      const response = await fetch(currentUrl, {
-        method: method,
-        headers: headers,
-        body: body,
-        redirect: 'manual'
-      });
-
-      // If Google returns 301/302/307 redirect
-      if (response.status >= 300 && response.status < 400) {
-        const redirectUrl = response.headers.get('location');
-        if (redirectUrl) {
-          currentUrl = redirectUrl;
-          method = 'GET';
-          body = undefined;
-          headers = {
-            'Accept': 'application/json, text/plain, */*'
-          };
-          redirectCount++;
-          continue;
-        }
-      }
-
-      const text = await response.text();
-      
-      // If POST was successful or got standard output
-      if (response.ok || (response.status !== 405 && response.status !== 404)) {
-        return {
-          status: response.status,
-          ok: response.ok,
-          text: text
-        };
-      }
-
-      // If got 405 on POST, break to try GET query fallback
-      break;
-    }
   } catch (err) {
-    console.warn('POST to Google Apps Script attempt failed, trying fallback...', err.message);
+    console.warn('POST to Google Apps Script failed:', err.message);
+    return {
+      status: 500,
+      ok: false,
+      text: err.message
+    };
   }
-
-  // Method 2 (Fallback): Try GET request with encoded data parameter
-  try {
-    const encodedData = encodeURIComponent(bodyStr);
-    const getUrl = cleanUrl.includes('?') ? `${cleanUrl}&data=${encodedData}` : `${cleanUrl}?data=${encodedData}`;
-
-    let currentGetUrl = getUrl;
-    let getRedirects = 0;
-    while (getRedirects < 5) {
-      const getRes = await fetch(currentGetUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json, text/plain, */*'
-        },
-        redirect: 'manual'
-      });
-
-      if (getRes.status >= 300 && getRes.status < 400) {
-        const nextLoc = getRes.headers.get('location');
-        if (nextLoc) {
-          currentGetUrl = nextLoc;
-          getRedirects++;
-          continue;
-        }
-      }
-
-      const getText = await getRes.text();
-      return {
-        status: getRes.status,
-        ok: getRes.ok,
-        text: getText
-      };
-    }
-  } catch (err) {
-    console.warn('GET fallback to Google Apps Script also failed:', err.message);
-  }
-
-  return {
-    status: 405,
-    ok: false,
-    text: '405 Not Allowed'
-  };
 }
 
 app.post('/api/gdrive/sync', async (req, res) => {
