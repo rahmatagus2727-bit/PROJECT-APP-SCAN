@@ -503,42 +503,106 @@ app.post('/api/gdrive/config', (req, res) => {
 async function callGoogleAppsScript(targetUrl, payload) {
   const bodyStr = JSON.stringify(payload);
 
-  // 1. Send POST request with redirect: 'manual' to handle Google's 302 -> GET echo flow
-  const firstResponse = await fetch(targetUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8'
-    },
-    body: bodyStr,
-    redirect: 'manual'
-  });
+  // Clean URL
+  let cleanUrl = targetUrl.trim().replace(/^["']|["']$/g, '');
+  if (cleanUrl.includes('/edit')) {
+    cleanUrl = cleanUrl.replace(/\/edit(\?.*)?$/, '/exec$1');
+  }
+  if (cleanUrl.includes('/dev')) {
+    cleanUrl = cleanUrl.replace(/\/dev(\?.*)?$/, '/exec$1');
+  }
 
-  // If Google returns 302/301/307 redirect
-  if (firstResponse.status >= 300 && firstResponse.status < 400) {
-    const redirectUrl = firstResponse.headers.get('location');
-    if (redirectUrl) {
-      // Must follow redirect with GET request to script.googleusercontent.com
-      const redirectedResponse = await fetch(redirectUrl, {
+  // Method 1: Try POST request with manual redirect handling (Google 302 -> GET echo flow)
+  try {
+    let currentUrl = cleanUrl;
+    let method = 'POST';
+    let body = bodyStr;
+    let headers = {
+      'Content-Type': 'text/plain;charset=utf-8'
+    };
+
+    let redirectCount = 0;
+    while (redirectCount < 5) {
+      const response = await fetch(currentUrl, {
+        method: method,
+        headers: headers,
+        body: body,
+        redirect: 'manual'
+      });
+
+      // If Google returns 301/302/307 redirect
+      if (response.status >= 300 && response.status < 400) {
+        const redirectUrl = response.headers.get('location');
+        if (redirectUrl) {
+          currentUrl = redirectUrl;
+          method = 'GET';
+          body = undefined;
+          headers = {
+            'Accept': 'application/json, text/plain, */*'
+          };
+          redirectCount++;
+          continue;
+        }
+      }
+
+      const text = await response.text();
+      
+      // If POST was successful or got standard output
+      if (response.ok || (response.status !== 405 && response.status !== 404)) {
+        return {
+          status: response.status,
+          ok: response.ok,
+          text: text
+        };
+      }
+
+      // If got 405 on POST, break to try GET query fallback
+      break;
+    }
+  } catch (err) {
+    console.warn('POST to Google Apps Script attempt failed, trying fallback...', err.message);
+  }
+
+  // Method 2 (Fallback): Try GET request with encoded data parameter
+  try {
+    const encodedData = encodeURIComponent(bodyStr);
+    const getUrl = cleanUrl.includes('?') ? `${cleanUrl}&data=${encodedData}` : `${cleanUrl}?data=${encodedData}`;
+
+    let currentGetUrl = getUrl;
+    let getRedirects = 0;
+    while (getRedirects < 5) {
+      const getRes = await fetch(currentGetUrl, {
         method: 'GET',
         headers: {
           'Accept': 'application/json, text/plain, */*'
-        }
+        },
+        redirect: 'manual'
       });
-      const text = await redirectedResponse.text();
+
+      if (getRes.status >= 300 && getRes.status < 400) {
+        const nextLoc = getRes.headers.get('location');
+        if (nextLoc) {
+          currentGetUrl = nextLoc;
+          getRedirects++;
+          continue;
+        }
+      }
+
+      const getText = await getRes.text();
       return {
-        status: redirectedResponse.status,
-        ok: redirectedResponse.ok,
-        text
+        status: getRes.status,
+        ok: getRes.ok,
+        text: getText
       };
     }
+  } catch (err) {
+    console.warn('GET fallback to Google Apps Script also failed:', err.message);
   }
 
-  // If response was not redirected (or already final)
-  const text = await firstResponse.text();
   return {
-    status: firstResponse.status,
-    ok: firstResponse.ok,
-    text
+    status: 405,
+    ok: false,
+    text: '405 Not Allowed'
   };
 }
 
@@ -560,22 +624,34 @@ app.post('/api/gdrive/sync', async (req, res) => {
     });
   }
 
-  // 2. Auto-fix /edit to /exec if user accidentally copied editor URL
+  // 2. Auto-clean URL
+  targetUrl = targetUrl.replace(/^["']|["']$/g, '');
   if (targetUrl.includes('/edit')) {
     targetUrl = targetUrl.replace(/\/edit(\?.*)?$/, '/exec$1');
+  }
+  if (targetUrl.includes('/dev')) {
+    targetUrl = targetUrl.replace(/\/dev(\?.*)?$/, '/exec$1');
   }
 
   const payload = req.body.payload || req.body;
 
   try {
     const gasResult = await callGoogleAppsScript(targetUrl, payload);
-    const text = gasResult.text;
+    const text = gasResult.text || '';
 
     // 3. Detect if Google returned a Sign-in / Access Denied HTML page
     if (text.includes('accounts.google.com') || text.includes('Sign in - Google Accounts') || text.includes('serviceLogin') || (text.includes('<!DOCTYPE html>') && text.includes('Google') && text.includes('Sign in'))) {
       return res.status(400).json({
         success: false,
         message: 'Akses Ditolak Google: Pengaturan "Who has access" di Google Apps Script belum diset ke "Anyone" (Siapa saja). Silakan buka Google Apps Script > Deploy > Manage deployments > Edit (ikon pensil) > ganti "Who has access" ke "Anyone" > Deploy ulang.'
+      });
+    }
+
+    // 4. Detect 405 Method Not Allowed specifically
+    if (gasResult.status === 405 || text.includes('405') || text.includes('Method Not Allowed')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Google Apps Script mengembalikan 405 Not Allowed. Hal ini terjadi jika script di Google Sheets belum dideploy ke Versi Baru (New Version) setelah Anda menempelkan kode doPost/doGet. Solusi: Buka Google Apps Script > Klik "Deploy" > "Manage deployments" > Ikon Pensil (Edit) > Version: pilih "New version" > Klik "Deploy".'
       });
     }
 

@@ -572,11 +572,16 @@ function handleRequest(e) {
 
           <ol start="4" style="padding-left: 18px; margin: 8px 0; line-height: 1.6;">
             <li>Klik tombol biru <b>Deploy</b> (kanan atas) &gt; <b>New deployment</b>.</li>
-            <li>Pilih ikon roda gigi (⚙️) &gt; pilih <b>Web app</b>.</li>
+            <li>Pilih jenis (⚙️) &gt; pilih <b>Web app</b>.</li>
             <li>Pada bagian <i>Who has access</i>, <b>WAJIB pilih "Anyone" (Siapa saja)</b>.</li>
             <li>Klik <b>Deploy</b> &gt; Setujui izin (Authorize access) &gt; Salin <b>Web App URL</b> yang berakhiran <code>/exec</code>.</li>
             <li>Tempel URL tersebut ke kolom di atas dan klik <b>Simpan Pengaturan</b>. Selesai! 🎉</li>
           </ol>
+
+          <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid #f59e0b; border-radius: 6px; padding: 10px 12px; margin-top: 10px; font-size: 0.82rem; color: #fbbf24; line-height: 1.5;">
+            💡 <b>Jika muncul error "405 Not Allowed":</b><br>
+            Tombol <i>Save (Simpan)</i> saja tidak memperbarui Web App yang sedang aktif. Anda harus klik <b>Deploy &gt; Manage deployments &gt; Edit (ikon pensil) &gt; pada baris Version pilih "New version" &gt; Deploy</b>.
+          </div>
         </div>
       </details>
     </div>
