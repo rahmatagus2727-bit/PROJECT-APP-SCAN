@@ -780,11 +780,60 @@ app.post('/api/auth/login', (req, res) => {
       });
     } catch (dbErr) {
       console.warn('Login db warning:', dbErr);
-      return res.status(500).json({ success: false, message: 'Terjadi kesalahan sistem saat login.' });
     }
   }
 
-  return res.status(500).json({ success: false, message: 'Database server belum siap.' });
+  // Fallback if sqliteDb is busy or in-memory reload: check USERS_FILE
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const raw = fs.readFileSync(USERS_FILE, 'utf-8');
+      const list = JSON.parse(raw) || [];
+      const match = list.find(u => 
+        (u.email && u.email.toLowerCase() === cleanInput) ||
+        (u.name && u.name.toLowerCase() === cleanInput) ||
+        (u.id && u.id.toLowerCase() === cleanInput) ||
+        (u.id && u.id.toLowerCase() === 'user_' + cleanInput) ||
+        (u.name && u.name.toLowerCase().startsWith(cleanInput))
+      );
+
+      if (match) {
+        if (String(match.password || '').trim() === inputPass) {
+          const effectiveRole = match.role || (match.id === 'user_admin' ? 'admin' : 'petugas');
+          return res.json({
+            success: true,
+            message: `Login berhasil sebagai ${effectiveRole === 'admin' ? 'Admin' : 'Petugas'}.`,
+            user: { id: match.id, email: match.email, name: match.name, role: effectiveRole }
+          });
+        } else {
+          return res.status(401).json({
+            success: false,
+            message: 'Kata sandi atau PIN salah! Silakan periksa kembali.'
+          });
+        }
+      }
+    }
+  } catch (fsErr) {}
+
+  // Built-in hard fallback for default admin
+  if (cleanInput === 'admin' || cleanInput === 'user_admin' || cleanInput === 'admin@apar.id') {
+    if (inputPass === 'admin' || inputPass === '123') {
+      return res.json({
+        success: true,
+        message: 'Login berhasil sebagai Admin.',
+        user: { id: 'user_admin', email: 'admin@apar.id', name: 'Admin K3 / Pemeliharaan', role: 'admin' }
+      });
+    } else {
+      return res.status(401).json({
+        success: false,
+        message: 'Kata sandi atau PIN salah! Silakan periksa kembali.'
+      });
+    }
+  }
+
+  return res.status(401).json({
+    success: false,
+    message: 'Akun tidak ditemukan! Pastikan Nama/ID benar atau hubungi Admin untuk didaftarkan.'
+  });
 });
 
 // -------------------------------------------------------------
