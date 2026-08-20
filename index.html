@@ -429,35 +429,51 @@
 
           <div class="script-code-container">
             <div class="script-code-header">
-              <span>Code.gs</span>
+              <span>Code.gs (Google Apps Script - Salin &amp; Tempel ke Extensions &gt; Apps Script)</span>
               <button type="button" id="btnCopyScriptCode" class="btn-copy-code">📋 Salin Kode</button>
             </div>
             <pre class="script-code-box" id="scriptCodeBlock">/**
+ * =========================================================================
  * GOOGLE APPS SCRIPT - SISTEM PEMELIHARAAN APAR (KODE 1 - 128)
- * Otomatis Menyematkan Foto Langsung ke Dalam Sel Google Sheets (Bukan Berupa Link Teks)
+ * Otomatis Menyematkan Foto Langsung ke Dalam Sel Google Sheets (In-Cell Image)
+ * =========================================================================
  * 
- * CARA PASANG / UPDATE SCRIPT:
- * 1. Di Google Sheets: Klik menu Extensions (Ekstensi) > Apps Script
- * 2. Hapus semua kode lama, Tempel (Paste) kode di bawah ini, lalu klik Simpan (Ctrl+S)
- * 3. Klik tombol biru "Deploy" (kanan atas) > "Manage deployments" (Kelola deployment)
- *    - Klik ikon Pensil (Edit)
- *    - Pada baris Version, pilih "New version" (Versi baru)
- *    - Klik "Deploy"
- * 4. Selesai! Foto eviden akan langsung tampil otomatis sebagai gambar di Spreadsheet Anda.
+ * PANDUAN PEMASANGAN / UPDATE SCRIPT:
+ * 1. Di Google Sheets Anda: Klik menu "Extensions" (Ekstensi) > "Apps Script".
+ * 2. Hapus SEMUA kode lama di editor, lalu Tempel (Paste) seluruh kode ini.
+ * 3. Klik ikon Simpan 💾 (Ctrl+S).
+ * 4. Klik tombol biru "Deploy" (kanan atas) > pilih "Manage deployments" (Kelola deployment).
+ *    - Klik ikon Pensil ✏️ (Edit).
+ *    - Pada bagian "Version", pilih "New version" (Versi baru).
+ *    - Pada bagian "Who has access", pastikan terpilih "Anyone" (Siapa saja).
+ *    - Klik "Deploy".
+ * 5. Salin "Web App URL" (yang berakhiran /exec) dan tempelkan ke aplikasi APAR Anda.
+ * 6. Selesai! Foto eviden akan otomatis tampil sebagai gambar langsung di dalam sel.
  */
 
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('📌 Menu APAR')
-    .addItem('🖼️ Ubah Semua Link Drive Jadi Foto di Sel', 'menuKonversiLinkKeFoto')
+    .addItem('🖼️ Ubah Semua Link Drive Menjadi Foto di Sel', 'menuKonversiLinkKeFoto')
+    .addItem('📐 Rapikan Tinggi Baris Foto (75px)', 'menuRapikanTinggiBaris')
     .addToUi();
 }
 
 function menuKonversiLinkKeFoto() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName("DATA FSS & APAR") || ss.getSheetByName("Inspeksi APAR") || ss.getActiveSheet();
+  var sheet = ss.getActiveSheet();
   var count = konversiSemuaLinkMenjadiFoto(sheet);
-  SpreadsheetApp.getUi().alert("Berhasil mengubah " + count + " link foto menjadi gambar di dalam sel.");
+  SpreadsheetApp.getUi().alert("✅ Berhasil! " + count + " link foto Google Drive telah diubah menjadi gambar langsung di dalam sel.");
+}
+
+function menuRapikanTinggiBaris() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getActiveSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    sheet.setRowHeights(2, lastRow - 1, 75);
+    SpreadsheetApp.getUi().alert("✅ Tinggi semua baris data telah diatur ke 75px agar foto terlihat jelas.");
+  }
 }
 
 function doPost(e) {
@@ -479,8 +495,8 @@ function handleRequest(e) {
       rawData = e.parameter.payload;
     }
     
-    // Ping test check
-    if (!rawData && (!e || !e.parameter || (!e.parameter.kode && !e.parameter.id && !e.parameter.data))) {
+    // Ping test
+    if (!rawData && (!e || !e.parameter || (!e.parameter.kode && !e.parameter.id))) {
       return ContentService.createTextOutput(JSON.stringify({
         success: true,
         status: "active",
@@ -503,25 +519,24 @@ function handleRequest(e) {
     if (!ss) {
       return ContentService.createTextOutput(JSON.stringify({
         success: false,
-        error: "Spreadsheet tidak aktif. Buka script dari menu Extensions > Apps Script."
+        error: "Spreadsheet tidak aktif. Jalankan script ini dari menu Extensions > Apps Script."
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    var sheet = ss.getSheetByName("DATA FSS & APAR");
-    if (!sheet) {
-      sheet = ss.getSheetByName("Inspeksi APAR") || ss.getActiveSheet();
-    }
+    var sheet = ss.getSheetByName("DATA FSS & APAR") || ss.getSheetByName("Inspeksi APAR") || ss.getActiveSheet();
     
-    // Inisialisasi Header Standar jika sheet baru/kosong
-    initHeaderIfEmpty(sheet);
+    // Inisialisasi Header Standar jika sheet benar-benar kosong
+    if (sheet.getLastRow() === 0) {
+      initHeaderIfEmpty(sheet);
+    }
     
     // Siapkan folder foto Google Drive
     var folderName = "Foto_Inspeksi_APAR";
     var folders = DriveApp.getFoldersByName(folderName);
     var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
     
-    // Deteksi kolom foto secara dinamis
-    var photoCol = cariKolomFoto(sheet);
+    // Peta Kolom Cerdas berdasarkan header yang ada di Spreadsheet pengguna
+    var colMap = deteksiStrukturKolom(sheet);
     
     var items = Array.isArray(payload.items) ? payload.items : [payload];
     var processedCount = 0;
@@ -547,20 +562,25 @@ function handleRequest(e) {
           file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
           var fileId = file.getId();
           photoViewUrl = file.getUrl();
-          // Link direct image streaming untuk formula =IMAGE() di Google Sheets
+          // Link direct image streaming untuk formula =IMAGE() & newCellImage di Google Sheets
           directPhotoUrl = "https://lh3.googleusercontent.com/d/" + fileId;
         } catch (imgErr) {
           photoViewUrl = "Error upload foto: " + imgErr.toString();
         }
       } else if (item.photoDriveUrl) {
         photoViewUrl = item.photoDriveUrl;
-        var match = photoViewUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+        var match = photoViewUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || photoViewUrl.match(/id=([a-zA-Z0-9_-]+)/);
         if (match && match[1]) {
           directPhotoUrl = "https://lh3.googleusercontent.com/d/" + match[1];
         }
       } else if (item.foto && typeof item.foto === 'string' && item.foto.indexOf("http") === 0) {
         photoViewUrl = item.foto;
-        directPhotoUrl = item.foto;
+        var match2 = photoViewUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || photoViewUrl.match(/id=([a-zA-Z0-9_-]+)/);
+        if (match2 && match2[1]) {
+          directPhotoUrl = "https://lh3.googleusercontent.com/d/" + match2[1];
+        } else {
+          directPhotoUrl = item.foto;
+        }
       }
       
       var kebersihan = item.kebersihanTabung === "good" ? "Bersih" : (item.kebersihanTabung === "bad" ? "Kotor" : (item.kebersihanTabung || "-"));
@@ -571,42 +591,47 @@ function handleRequest(e) {
       var tag = item.tagLabel === "good" ? "Ada" : (item.tagLabel === "bad" ? "Tidak Ada" : (item.tagLabel || "-"));
       var tgl = item.tanggal ? Utilities.formatDate(new Date(item.tanggal), "Asia/Jakarta", "dd/MM/yyyy HH:mm") : Utilities.formatDate(new Date(), "Asia/Jakarta", "dd/MM/yyyy HH:mm");
 
-      var rowValues = [
-        kodeStr,
-        item.ruangan || "-",
-        item.gedung || "-",
-        item.lantai || "-",
-        item.merk || "-",
-        item.kapasitas || "-",
-        item.jenisGas || "-",
-        kebersihan,
-        tekanan,
-        kunci,
-        selang,
-        nozzle,
-        tag,
-        item.keterangan || "-",
-        directPhotoUrl ? "" : "-", // Kolom 15: Foto Eviden (diisi formula foto)
-        photoViewUrl || (item.foto ? "Tersimpan di Aplikasi" : "-"), // Kolom 16: Link Drive
-        tgl,
-        item.pemeriksa || "Petugas",
-        item.status || "✅ Selesai"
-      ];
+      // Cari apakah kode APAR sudah ada di baris data
+      var targetRow = cariBarisByKode(sheet, colMap.kodeCol, colMap.dataStartRow, kodeStr);
       
-      // Update baris yang sudah ada jika kode ditemukan di Kolom A, atau tambahkan di bawah
-      var targetRow = findRowByKode(sheet, kodeStr);
-      if (targetRow > 2) {
-        sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
-        sematkanFotoKeSel(sheet, targetRow, photoCol, directPhotoUrl, kodeStr);
-      } else {
-        sheet.appendRow(rowValues);
-        var newRow = sheet.getLastRow();
-        sematkanFotoKeSel(sheet, newRow, photoCol, directPhotoUrl, kodeStr);
+      if (targetRow <= 0) {
+        targetRow = Math.max(sheet.getLastRow() + 1, colMap.dataStartRow);
       }
+      
+      // Tulis data sesuai mapping kolom yang ada di spreadsheet
+      tulisNilaiSel(sheet, targetRow, colMap.kodeCol, kodeStr);
+      tulisNilaiSel(sheet, targetRow, colMap.ruanganCol, item.ruangan || "-");
+      tulisNilaiSel(sheet, targetRow, colMap.gedungCol, item.gedung || "-");
+      tulisNilaiSel(sheet, targetRow, colMap.lantaiCol, item.lantai || "-");
+      tulisNilaiSel(sheet, targetRow, colMap.merkCol, item.merk || "-");
+      tulisNilaiSel(sheet, targetRow, colMap.kapasitasCol, item.kapasitas || "-");
+      tulisNilaiSel(sheet, targetRow, colMap.jenisGasCol, item.jenisGas || "-");
+      tulisNilaiSel(sheet, targetRow, colMap.kebersihanCol, kebersihan);
+      tulisNilaiSel(sheet, targetRow, colMap.tekananCol, tekanan);
+      tulisNilaiSel(sheet, targetRow, colMap.kunciCol, kunci);
+      tulisNilaiSel(sheet, targetRow, colMap.selangCol, selang);
+      tulisNilaiSel(sheet, targetRow, colMap.nozzleCol, nozzle);
+      tulisNilaiSel(sheet, targetRow, colMap.tagCol, tag);
+      tulisNilaiSel(sheet, targetRow, colMap.keteranganCol, item.keterangan || "-");
+      tulisNilaiSel(sheet, targetRow, colMap.tanggalCol, tgl);
+      tulisNilaiSel(sheet, targetRow, colMap.petugasCol, item.pemeriksa || "Petugas");
+      tulisNilaiSel(sheet, targetRow, colMap.statusCol, item.status || "✅ Selesai");
+
+      // TULIS FOTO SEBAGAI GAMBAR LANGSUNG DI DALAM SEL
+      if (colMap.fotoCol > 0) {
+        sematkanFotoKeSel(sheet, targetRow, colMap.fotoCol, directPhotoUrl, kodeStr);
+      }
+      
+      // Jika ada kolom terpisah untuk Link Drive
+      if (colMap.linkDriveCol > 0 && colMap.linkDriveCol !== colMap.fotoCol) {
+        tulisNilaiSel(sheet, targetRow, colMap.linkDriveCol, photoViewUrl || "-");
+      }
+
+      sheet.setRowHeight(targetRow, 75);
       processedCount++;
     });
     
-    // Otomatis bersihkan link lama menjadi gambar di sel
+    // Otomatis ubah semua link lama di sheet menjadi foto gambar asli
     konversiSemuaLinkMenjadiFoto(sheet);
     
     return ContentService.createTextOutput(JSON.stringify({
@@ -625,39 +650,140 @@ function handleRequest(e) {
   }
 }
 
-function sematkanFotoKeSel(sheet, row, col, directPhotoUrl, kodeStr) {
-  if (!directPhotoUrl) return;
-  try {
-    sheet.getRange(row, col).setFormula('=IMAGE("' + directPhotoUrl + '", 1)');
-    sheet.setRowHeight(row, 75);
-    sheet.getRange(row, col).setHorizontalAlignment("center").setVerticalAlignment("middle");
-  } catch (e) {
-    console.warn("Gagal set formula IMAGE:", e);
+function tulisNilaiSel(sheet, row, col, val) {
+  if (col > 0 && row > 0) {
+    sheet.getRange(row, col).setValue(val);
+    sheet.getRange(row, col).setVerticalAlignment("middle");
   }
 }
 
-function cariKolomFoto(sheet) {
-  var lastCol = sheet.getLastColumn() || 19;
-  var row1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  var row2 = sheet.getLastRow() >= 2 ? sheet.getRange(2, 1, 1, lastCol).getValues()[0] : [];
+function sematkanFotoKeSel(sheet, row, col, directPhotoUrl, kodeStr) {
+  if (!directPhotoUrl || col <= 0 || row <= 0) return;
+  var range = sheet.getRange(row, col);
   
-  for (var c = 0; c < lastCol; c++) {
-    var h1 = String(row1[c] || "").toLowerCase();
-    var h2 = String(row2[c] || "").toLowerCase();
-    if (h1.indexOf("foto") !== -1 || h1.indexOf("eviden") !== -1 || h1.indexOf("gambar") !== -1 ||
-        h2.indexOf("foto") !== -1 || h2.indexOf("eviden") !== -1 || h2.indexOf("gambar") !== -1) {
-      return c + 1;
+  // Metode 1: Gunakan formula =IMAGE(...) yang kompatibel 100% dengan Google Sheets
+  try {
+    range.setFormula('=IMAGE("' + directPhotoUrl + '", 1)');
+    range.setHorizontalAlignment("center").setVerticalAlignment("middle");
+  } catch (e) {
+    // Metode 2: In-Cell Image API
+    try {
+      var cellImage = SpreadsheetApp.newCellImage()
+        .setSourceUrl(directPhotoUrl)
+        .setAltTextTitle("Foto APAR " + kodeStr)
+        .build();
+      range.setValue(cellImage);
+    } catch (e2) {
+      range.setValue(directPhotoUrl);
     }
   }
-  return 15; // Default kolom 15 (O) untuk template standar APAR
+}
+
+function deteksiStrukturKolom(sheet) {
+  var lastCol = Math.max(sheet.getLastColumn(), 19);
+  var lastRow = Math.max(sheet.getLastRow(), 3);
+  var row1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0] || [];
+  var row2 = lastRow >= 2 ? (sheet.getRange(2, 1, 1, lastCol).getValues()[0] || []) : [];
+  
+  var map = {
+    dataStartRow: 3,
+    kodeCol: 1,
+    ruanganCol: 2,
+    gedungCol: 3,
+    lantaiCol: 4,
+    merkCol: 5,
+    kapasitasCol: 6,
+    jenisGasCol: 7,
+    kebersihanCol: 8,
+    tekananCol: 9,
+    kunciCol: 10,
+    selangCol: 11,
+    nozzleCol: 12,
+    tagCol: 13,
+    keteranganCol: 14,
+    fotoCol: 15,
+    linkDriveCol: 16,
+    tanggalCol: 17,
+    petugasCol: 18,
+    statusCol: 19
+  };
+
+  // Cek apakah header hanya 1 baris (row 1) atau 2 baris (merged)
+  var isSingleHeader = true;
+  for (var i = 0; i < row2.length; i++) {
+    var v = String(row2[i] || "").trim().toLowerCase();
+    if (v && v !== "kode" && v !== "ruangan" && v !== "gedung") {
+      // Jika baris 2 berisi header sub-kolom
+      if (v.indexOf("tabung") !== -1 || v.indexOf("tekanan") !== -1 || v.indexOf("nozzle") !== -1) {
+        isSingleHeader = false;
+        map.dataStartRow = 3;
+        break;
+      }
+    }
+  }
+  if (isSingleHeader && lastRow >= 2) {
+    map.dataStartRow = 2;
+  }
+
+  // Cari index tiap kolom secara fleksibel berdasarkan nama header
+  for (var c = 0; c < lastCol; c++) {
+    var h1 = String(row1[c] || "").toLowerCase().trim();
+    var h2 = String(row2[c] || "").toLowerCase().trim();
+    var h = h1 + " " + h2;
+    var colIdx = c + 1;
+
+    if (h.indexOf("kode") !== -1 || h.indexOf("no apar") !== -1 || h.indexOf("id") !== -1) map.kodeCol = colIdx;
+    else if (h.indexOf("ruang") !== -1 || h.indexOf("lokasi") !== -1) map.ruanganCol = colIdx;
+    else if (h.indexOf("gedung") !== -1 || h.indexOf("building") !== -1) map.gedungCol = colIdx;
+    else if (h.indexOf("lantai") !== -1 || h.indexOf("floor") !== -1) map.lantaiCol = colIdx;
+    else if (h.indexOf("merk") !== -1 || h.indexOf("brand") !== -1) map.merkCol = colIdx;
+    else if (h.indexOf("kapasitas") !== -1 || h.indexOf("berat") !== -1) map.kapasitasCol = colIdx;
+    else if (h.indexOf("jenis") !== -1 || h.indexOf("media") !== -1 || h.indexOf("gas") !== -1) map.jenisGasCol = colIdx;
+    else if (h.indexOf("kebersihan") !== -1) map.kebersihanCol = colIdx;
+    else if (h.indexOf("tekanan") !== -1 || h.indexOf("manometer") !== -1 || h.indexOf("indikator") !== -1) map.tekananCol = colIdx;
+    else if (h.indexOf("kunci") !== -1 || h.indexOf("pin") !== -1 || h.indexOf("segel") !== -1) map.kunciCol = colIdx;
+    else if (h.indexOf("selang") !== -1 || h.indexOf("hose") !== -1) map.selangCol = colIdx;
+    else if (h.indexOf("nozzle") !== -1 || h.indexOf("corong") !== -1) map.nozzleCol = colIdx;
+    else if (h.indexOf("tag") !== -1 || h.indexOf("label") !== -1) map.tagCol = colIdx;
+    else if (h.indexOf("keterangan") !== -1 || h.indexOf("catatan") !== -1 || h.indexOf("note") !== -1) map.keteranganCol = colIdx;
+    else if (h.indexOf("foto") !== -1 || h.indexOf("eviden") !== -1 || h.indexOf("gambar") !== -1 || h.indexOf("dokumentasi") !== -1) {
+      if (h.indexOf("link") !== -1 && h.indexOf("drive") !== -1) {
+        map.linkDriveCol = colIdx;
+      }
+      map.fotoCol = colIdx;
+    }
+    else if (h.indexOf("tanggal") !== -1 || h.indexOf("tgl") !== -1 || h.indexOf("waktu") !== -1) map.tanggalCol = colIdx;
+    else if (h.indexOf("petugas") !== -1 || h.indexOf("pemeriksa") !== -1) map.petugasCol = colIdx;
+    else if (h.indexOf("status") !== -1) map.statusCol = colIdx;
+  }
+
+  // Jika kolom foto ditemukan, pastikan lebarnya memadai
+  if (map.fotoCol > 0) {
+    sheet.setColumnWidth(map.fotoCol, 130);
+  }
+
+  return map;
+}
+
+function cariBarisByKode(sheet, kodeCol, startRow, kode) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < startRow || kodeCol <= 0) return -1;
+  
+  var rangeValues = sheet.getRange(startRow, kodeCol, lastRow - startRow + 1, 1).getValues();
+  for (var i = 0; i < rangeValues.length; i++) {
+    if (String(rangeValues[i][0]).trim().toLowerCase() === String(kode).trim().toLowerCase()) {
+      return i + startRow;
+    }
+  }
+  return -1;
 }
 
 function konversiSemuaLinkMenjadiFoto(sheet) {
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
-  if (lastRow <= 2 || lastCol < 1) return 0;
+  if (lastRow < 2 || lastCol < 1) return 0;
   
-  var range = sheet.getRange(3, 1, lastRow - 2, lastCol);
+  var range = sheet.getRange(1, 1, lastRow, lastCol);
   var values = range.getValues();
   var count = 0;
   
@@ -665,30 +791,28 @@ function konversiSemuaLinkMenjadiFoto(sheet) {
     for (var c = 0; c < values[r].length; c++) {
       var val = String(values[r][c] || "");
       if (val.indexOf("drive.google.com") !== -1 || val.indexOf("googleusercontent.com") !== -1) {
-        var match = val.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || val.match(/id=([a-zA-Z0-9_-]+)/);
+        var match = val.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || val.match(/id=([a-zA-Z0-9_-]+)/) || val.match(/\/d\/([a-zA-Z0-9_-]+)/);
         var fileId = match ? match[1] : "";
         if (fileId) {
           var directUrl = "https://lh3.googleusercontent.com/d/" + fileId;
-          sheet.getRange(r + 3, c + 1).setFormula('=IMAGE("' + directUrl + '", 1)');
-          sheet.setRowHeight(r + 3, 75);
+          var cell = sheet.getRange(r + 1, c + 1);
+          try {
+            cell.setFormula('=IMAGE("' + directUrl + '", 1)');
+          } catch(e) {
+            try {
+              var img = SpreadsheetApp.newCellImage().setSourceUrl(directUrl).build();
+              cell.setValue(img);
+            } catch(e2){}
+          }
+          cell.setHorizontalAlignment("center").setVerticalAlignment("middle");
+          sheet.setRowHeight(r + 1, 75);
+          sheet.setColumnWidth(c + 1, 130);
           count++;
         }
       }
     }
   }
   return count;
-}
-
-function findRowByKode(sheet, kode) {
-  var lastRow = sheet.getLastRow();
-  if (lastRow <= 2) return -1;
-  var colA = sheet.getRange(3, 1, lastRow - 2, 1).getValues();
-  for (var i = 0; i < colA.length; i++) {
-    if (String(colA[i][0]).trim() === String(kode).trim()) {
-      return i + 3;
-    }
-  }
-  return -1;
 }
 
 function initHeaderIfEmpty(sheet) {
@@ -754,7 +878,7 @@ function initHeaderIfEmpty(sheet) {
   sheet.getRange("N2:N2").setBackground("#c00000").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
   sheet.getRange("O2:S2").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
   
-  sheet.setColumnWidth(15, 125); // Kolom Foto Eviden
+  sheet.setColumnWidth(15, 130); // Kolom Foto Eviden
   sheet.setColumnWidth(16, 160); // Kolom Link Drive
   sheet.setFrozenRows(2);
 }</pre>
@@ -2695,9 +2819,16 @@ if (btnTestGdriveSync) {
 
 if (btnSyncAllToGdrive) {
   btnSyncAllToGdrive.addEventListener('click', async () => {
-    const url = GDRIVE_SETTINGS.googleScriptUrl || (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : '');
+    let url = (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : GDRIVE_SETTINGS.googleScriptUrl);
+    url = (url || '').replace(/^["']|["']$/g, '');
     if (!url) {
       setGdriveAlert('⚠️ URL Google Apps Script belum diisi. Masukkan URL lalu simpan.', 'err');
+      if (inputGoogleScriptUrl) inputGoogleScriptUrl.focus();
+      return;
+    }
+
+    if (url.includes('docs.google.com/spreadsheets')) {
+      setGdriveAlert(`❌ <b>URL Salah:</b> Anda memasukkan link Google Sheets Spreadsheet. <br>Yang dibutuhkan adalah <b>Web App URL</b> yang berakhiran <code>/exec</code> dari menu <i>Extensions &gt; Apps Script &gt; Deploy &gt; Web App</i>.`, 'err');
       return;
     }
 
@@ -2705,68 +2836,101 @@ if (btnSyncAllToGdrive) {
     APAR_DATA.forEach(data => {
       const entry = getLogEntry(data);
       if (entry) {
-        itemsToSend.push(entry);
+        // Associate master data if missing
+        const kodeStr = String(entry.kode || entry.id || data.kode || '');
+        const master = DATA_BY_KODE[kodeStr] || data;
+        itemsToSend.push({
+          ...entry,
+          kode: kodeStr,
+          ruangan: entry.ruangan || master.ruangan || '',
+          gedung: entry.gedung || master.gedung || '',
+          lantai: entry.lantai !== undefined ? entry.lantai : (master.lantai || ''),
+          merk: entry.merk || master.merk || '',
+          kapasitas: entry.kapasitas || master.kapasitas || '',
+          jenisGas: entry.jenisGas || master.jenisGas || ''
+        });
       }
     });
 
     if (itemsToSend.length === 0) {
-      setGdriveAlert('ℹ️ Belum ada riwayat inspeksi yang tersimpan untuk dikirim.', 'info');
+      setGdriveAlert('ℹ️ Belum ada riwayat inspeksi yang tersimpan untuk dikirim. Lakukan inspeksi alat terlebih dahulu.', 'info');
       return;
     }
 
     btnSyncAllToGdrive.disabled = true;
-    btnSyncAllToGdrive.textContent = `Mengirim ${itemsToSend.length} data...`;
-    setGdriveAlert(`⏳ Sedang mengirim <b>${itemsToSend.length}</b> data riwayat ke Google Sheets...`, 'info');
+    const total = itemsToSend.length;
+    let successCount = 0;
+    let failCount = 0;
 
-    try {
-      const res = await fetch('/api/gdrive/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          googleScriptUrl: url,
-          payload: { items: itemsToSend }
-        })
-      });
-      
-      const text = await res.text();
-      let data = {};
+    setGdriveAlert(`⏳ Memulai sinkronisasi massal <b>${total} data riwayat</b> ke Google Sheets...`, 'info');
+
+    // Send items in small batches/sequentially to avoid Google Apps Script execution timeout
+    for (let i = 0; i < total; i++) {
+      const item = itemsToSend[i];
+      const kodeLabel = item.kode || `Item ${i + 1}`;
+      btnSyncAllToGdrive.textContent = `Mengirim ${i + 1}/${total} (${kodeLabel})...`;
+      setGdriveAlert(`⏳ Mengirim data <b>${i + 1} dari ${total}</b> (Kode: <b>${kodeLabel}</b>)... Foto sedang diproses ke sel.`, 'info');
+
       try {
-        data = JSON.parse(text);
-      } catch (parseErr) {
-        data = { success: res.ok, message: text.slice(0, 200) };
+        const res = await fetch('/api/gdrive/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            googleScriptUrl: url,
+            payload: item
+          })
+        });
+
+        const text = await res.text();
+        let data = {};
+        try { data = JSON.parse(text); } catch (e) { data = { success: res.ok }; }
+
+        if (data.success) {
+          successCount++;
+        } else {
+          // Fallback direct webhook
+          try {
+            await fetch(url, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify(item)
+            });
+            successCount++;
+          } catch (directErr) {
+            failCount++;
+          }
+        }
+      } catch (err) {
+        try {
+          await fetch(url, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(item)
+          });
+          successCount++;
+        } catch (directErr) {
+          failCount++;
+        }
       }
 
-      if (data.success) {
-        setGdriveAlert(`🎉 <b>Sinkronisasi Berhasil!</b> Sebanyak <b>${itemsToSend.length} data</b> berhasil masuk ke Google Sheets &amp; Drive.`, 'ok');
-        showStatus(`🎉 Berhasil menyinkronkan ${itemsToSend.length} data ke Google Sheets & Drive!`, 'ok');
-      } else {
-        // Fallback: send directly via client
-        await fetch(url, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ items: itemsToSend })
-        });
-        setGdriveAlert(`🎉 <b>Sinkronisasi Terkirim!</b> Sebanyak <b>${itemsToSend.length} data</b> dikirim ke Google Sheets Anda.`, 'ok');
-        showStatus(`🎉 ${itemsToSend.length} data terkirim ke Google Sheets!`, 'ok');
+      // Small pause between items
+      if (i < total - 1) {
+        await new Promise(r => setTimeout(r, 150));
       }
-    } catch (e) {
-      try {
-        await fetch(url, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ items: itemsToSend })
-        });
-        setGdriveAlert(`🎉 <b>Sinkronisasi Terkirim!</b> Sebanyak <b>${itemsToSend.length} data</b> dikirim ke Google Sheets Anda.`, 'ok');
-        showStatus(`🎉 ${itemsToSend.length} data terkirim ke Google Sheets!`, 'ok');
-      } catch (directErr) {
-        setGdriveAlert(`❌ <b>Error:</b> ${e.message}`, 'err');
-      }
-    } finally {
-      btnSyncAllToGdrive.disabled = false;
-      btnSyncAllToGdrive.textContent = '🚀 Kirim Semua Riwayat Saat Ini ke Google Sheets (Sinkronisasi Massal)';
     }
+
+    if (successCount > 0) {
+      setGdriveAlert(`🎉 <b>Sinkronisasi Selesai!</b> Sebanyak <b>${successCount} dari ${total} data</b> berhasil masuk ke Google Sheets &amp; Drive dengan foto tersemat langsung di dalam sel.`, 'ok');
+      showStatus(`🎉 Berhasil menyinkronkan ${successCount} data ke Google Sheets!`, 'ok');
+    } else {
+      setGdriveAlert(`❌ <b>Gagal Menyinkronkan:</b> Pastikan URL Web App benar dan "Who has access" sudah diset ke "Anyone" di Google Apps Script.`, 'err');
+      showStatus('Gagal mengirim ke Google Sheets, periksa izin deployment.', 'err');
+    }
+
+    btnSyncAllToGdrive.disabled = false;
+    btnSyncAllToGdrive.textContent = '🚀 Kirim Semua Riwayat Saat Ini ke Google Sheets (Sinkronisasi Massal)';
   });
 }
 
