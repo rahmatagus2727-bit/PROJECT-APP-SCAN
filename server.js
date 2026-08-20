@@ -499,6 +499,49 @@ app.post('/api/gdrive/config', (req, res) => {
   });
 });
 
+// Helper function to reliably call Google Apps Script webhook without 405 redirect issues
+async function callGoogleAppsScript(targetUrl, payload) {
+  const bodyStr = JSON.stringify(payload);
+
+  // 1. Send POST request with redirect: 'manual' to handle Google's 302 -> GET echo flow
+  const firstResponse = await fetch(targetUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain;charset=utf-8'
+    },
+    body: bodyStr,
+    redirect: 'manual'
+  });
+
+  // If Google returns 302/301/307 redirect
+  if (firstResponse.status >= 300 && firstResponse.status < 400) {
+    const redirectUrl = firstResponse.headers.get('location');
+    if (redirectUrl) {
+      // Must follow redirect with GET request to script.googleusercontent.com
+      const redirectedResponse = await fetch(redirectUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json, text/plain, */*'
+        }
+      });
+      const text = await redirectedResponse.text();
+      return {
+        status: redirectedResponse.status,
+        ok: redirectedResponse.ok,
+        text
+      };
+    }
+  }
+
+  // If response was not redirected (or already final)
+  const text = await firstResponse.text();
+  return {
+    status: firstResponse.status,
+    ok: firstResponse.ok,
+    text
+  };
+}
+
 app.post('/api/gdrive/sync', async (req, res) => {
   let targetUrl = (req.body.googleScriptUrl || APP_SETTINGS.googleScriptUrl || '').trim();
   
@@ -525,19 +568,11 @@ app.post('/api/gdrive/sync', async (req, res) => {
   const payload = req.body.payload || req.body;
 
   try {
-    const response = await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8', // Prevents CORS preflight and works reliably with Google Apps Script
-      },
-      body: JSON.stringify(payload),
-      redirect: 'follow'
-    });
-
-    const text = await response.text();
+    const gasResult = await callGoogleAppsScript(targetUrl, payload);
+    const text = gasResult.text;
 
     // 3. Detect if Google returned a Sign-in / Access Denied HTML page
-    if (text.includes('accounts.google.com') || text.includes('Sign in - Google Accounts') || text.includes('serviceLogin') || (text.includes('<!DOCTYPE html>') && text.includes('Google'))) {
+    if (text.includes('accounts.google.com') || text.includes('Sign in - Google Accounts') || text.includes('serviceLogin') || (text.includes('<!DOCTYPE html>') && text.includes('Google') && text.includes('Sign in'))) {
       return res.status(400).json({
         success: false,
         message: 'Akses Ditolak Google: Pengaturan "Who has access" di Google Apps Script belum diset ke "Anyone" (Siapa saja). Silakan buka Google Apps Script > Deploy > Manage deployments > Edit (ikon pensil) > ganti "Who has access" ke "Anyone" > Deploy ulang.'
@@ -551,15 +586,15 @@ app.post('/api/gdrive/sync', async (req, res) => {
       result = { raw: text };
     }
 
-    if (response.ok && (result.success !== false) && !result.error) {
+    if (gasResult.ok && (result.success !== false) && !result.error) {
       return res.json({
         success: true,
         message: result.message || 'Sinkronisasi ke Google Sheets & Drive berhasil.',
         data: result
       });
     } else {
-      const errMsg = result.error || result.message || text.slice(0, 300) || 'Google Apps Script mengembalikan status gagal.';
-      return res.status(500).json({
+      const errMsg = result.error || result.message || text.slice(0, 300) || `Google Apps Script status: ${gasResult.status}`;
+      return res.status(gasResult.status >= 400 ? gasResult.status : 500).json({
         success: false,
         message: errMsg,
         details: text
