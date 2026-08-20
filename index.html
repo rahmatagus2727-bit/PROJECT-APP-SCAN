@@ -434,7 +434,7 @@
             </div>
             <pre class="script-code-box" id="scriptCodeBlock">/**
  * GOOGLE APPS SCRIPT - SISTEM PEMELIHARAAN APAR (KODE 1 - 128)
- * Otomatis Menyematkan Foto Langsung di Dalam Sel Google Sheets
+ * Otomatis Menyematkan Foto Langsung ke Dalam Sel Google Sheets (Bukan Berupa Link Teks)
  * 
  * CARA PASANG / UPDATE SCRIPT:
  * 1. Di Google Sheets: Klik menu Extensions (Ekstensi) > Apps Script
@@ -445,6 +445,20 @@
  *    - Klik "Deploy"
  * 4. Selesai! Foto eviden akan langsung tampil otomatis sebagai gambar di Spreadsheet Anda.
  */
+
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('📌 Menu APAR')
+    .addItem('🖼️ Ubah Semua Link Drive Jadi Foto di Sel', 'menuKonversiLinkKeFoto')
+    .addToUi();
+}
+
+function menuKonversiLinkKeFoto() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("DATA FSS & APAR") || ss.getSheetByName("Inspeksi APAR") || ss.getActiveSheet();
+  var count = konversiSemuaLinkMenjadiFoto(sheet);
+  SpreadsheetApp.getUi().alert("Berhasil mengubah " + count + " link foto menjadi gambar di dalam sel.");
+}
 
 function doPost(e) {
   return handleRequest(e);
@@ -506,6 +520,9 @@ function handleRequest(e) {
     var folders = DriveApp.getFoldersByName(folderName);
     var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
     
+    // Deteksi kolom foto secara dinamis
+    var photoCol = cariKolomFoto(sheet);
+    
     var items = Array.isArray(payload.items) ? payload.items : [payload];
     var processedCount = 0;
     
@@ -530,7 +547,7 @@ function handleRequest(e) {
           file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
           var fileId = file.getId();
           photoViewUrl = file.getUrl();
-          // Link direct image streaming yang 100% didukung formula =IMAGE() di Google Sheets
+          // Link direct image streaming untuk formula =IMAGE() di Google Sheets
           directPhotoUrl = "https://lh3.googleusercontent.com/d/" + fileId;
         } catch (imgErr) {
           photoViewUrl = "Error upload foto: " + imgErr.toString();
@@ -569,7 +586,7 @@ function handleRequest(e) {
         nozzle,
         tag,
         item.keterangan || "-",
-        directPhotoUrl ? "" : "-", // Kolom 15: Foto Eviden (diisi via formula)
+        directPhotoUrl ? "" : "-", // Kolom 15: Foto Eviden (diisi formula foto)
         photoViewUrl || (item.foto ? "Tersimpan di Aplikasi" : "-"), // Kolom 16: Link Drive
         tgl,
         item.pemeriksa || "Petugas",
@@ -580,24 +597,21 @@ function handleRequest(e) {
       var targetRow = findRowByKode(sheet, kodeStr);
       if (targetRow > 2) {
         sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
-        if (directPhotoUrl) {
-          sheet.getRange(targetRow, 15).setFormula('=IMAGE("' + directPhotoUrl + '", 1)');
-          sheet.setRowHeight(targetRow, 70);
-        }
+        sematkanFotoKeSel(sheet, targetRow, photoCol, directPhotoUrl, kodeStr);
       } else {
         sheet.appendRow(rowValues);
         var newRow = sheet.getLastRow();
-        if (directPhotoUrl) {
-          sheet.getRange(newRow, 15).setFormula('=IMAGE("' + directPhotoUrl + '", 1)');
-          sheet.setRowHeight(newRow, 70);
-        }
+        sematkanFotoKeSel(sheet, newRow, photoCol, directPhotoUrl, kodeStr);
       }
       processedCount++;
     });
     
+    // Otomatis bersihkan link lama menjadi gambar di sel
+    konversiSemuaLinkMenjadiFoto(sheet);
+    
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
-      message: "Berhasil memproses " + processedCount + " data APAR ke Google Sheets.",
+      message: "Berhasil memproses " + processedCount + " data APAR ke Google Sheets dengan foto tersemat langsung di dalam sel.",
       spreadsheetUrl: ss.getUrl(),
       folderUrl: folder.getUrl(),
       processedCount: processedCount
@@ -609,6 +623,60 @@ function handleRequest(e) {
       error: error.toString()
     })).setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+function sematkanFotoKeSel(sheet, row, col, directPhotoUrl, kodeStr) {
+  if (!directPhotoUrl) return;
+  try {
+    sheet.getRange(row, col).setFormula('=IMAGE("' + directPhotoUrl + '", 1)');
+    sheet.setRowHeight(row, 75);
+    sheet.getRange(row, col).setHorizontalAlignment("center").setVerticalAlignment("middle");
+  } catch (e) {
+    console.warn("Gagal set formula IMAGE:", e);
+  }
+}
+
+function cariKolomFoto(sheet) {
+  var lastCol = sheet.getLastColumn() || 19;
+  var row1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var row2 = sheet.getLastRow() >= 2 ? sheet.getRange(2, 1, 1, lastCol).getValues()[0] : [];
+  
+  for (var c = 0; c < lastCol; c++) {
+    var h1 = String(row1[c] || "").toLowerCase();
+    var h2 = String(row2[c] || "").toLowerCase();
+    if (h1.indexOf("foto") !== -1 || h1.indexOf("eviden") !== -1 || h1.indexOf("gambar") !== -1 ||
+        h2.indexOf("foto") !== -1 || h2.indexOf("eviden") !== -1 || h2.indexOf("gambar") !== -1) {
+      return c + 1;
+    }
+  }
+  return 15; // Default kolom 15 (O) untuk template standar APAR
+}
+
+function konversiSemuaLinkMenjadiFoto(sheet) {
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow <= 2 || lastCol < 1) return 0;
+  
+  var range = sheet.getRange(3, 1, lastRow - 2, lastCol);
+  var values = range.getValues();
+  var count = 0;
+  
+  for (var r = 0; r < values.length; r++) {
+    for (var c = 0; c < values[r].length; c++) {
+      var val = String(values[r][c] || "");
+      if (val.indexOf("drive.google.com") !== -1 || val.indexOf("googleusercontent.com") !== -1) {
+        var match = val.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || val.match(/id=([a-zA-Z0-9_-]+)/);
+        var fileId = match ? match[1] : "";
+        if (fileId) {
+          var directUrl = "https://lh3.googleusercontent.com/d/" + fileId;
+          sheet.getRange(r + 3, c + 1).setFormula('=IMAGE("' + directUrl + '", 1)');
+          sheet.setRowHeight(r + 3, 75);
+          count++;
+        }
+      }
+    }
+  }
+  return count;
 }
 
 function findRowByKode(sheet, kode) {
@@ -2059,6 +2127,19 @@ document.getElementById('btnDownload').addEventListener('click', async () => {
   }
 });
 
+function getImageDimensions(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth || 640, height: img.naturalHeight || 480 });
+    };
+    img.onerror = () => {
+      resolve({ width: 640, height: 480 });
+    };
+    img.src = dataUrl;
+  });
+}
+
 async function downloadExcel() {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Sistem Pemeliharaan APAR & FSS';
@@ -2176,7 +2257,7 @@ async function downloadExcel() {
     { width: 16 }, // Pemeriksaan Nozzle
     { width: 16 }, // TAG Label Pemeliharaan
     { width: 28 }, // KETERANGAN
-    { width: 28 }, // FOTO BUKTI (EVIDEN)
+    { width: 26 }, // FOTO BUKTI (EVIDEN)
     { width: 25 }, // LINK FOTO DRIVE
     { width: 20 }, // TANGGAL PEMERIKSAAN
     { width: 18 }, // PETUGAS
@@ -2229,17 +2310,30 @@ async function downloadExcel() {
     row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
     row.getCell(14).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
 
-    // Embed Image Thumbnail accurately centered in Column 15 (O) with neat margin
+    // Embed Image Thumbnail maintaining genuine aspect ratio in Column 15 (O)
     if (hasPhoto) {
       try {
         const match = /^data:image\/(png|jpe?g);base64,/.exec(entry.foto);
         const ext = match ? (match[1] === 'jpg' ? 'jpeg' : match[1]) : 'jpeg';
         const base64 = entry.foto.split(',')[1];
         if (base64) {
+          const dim = await getImageDimensions(entry.foto);
+          const maxW = 145; // max width in px
+          const maxH = 92;  // max height in px
+          const aspect = (dim.width && dim.height) ? (dim.width / dim.height) : (4 / 3);
+          let targetW, targetH;
+          if (aspect > (maxW / maxH)) {
+            targetW = maxW;
+            targetH = Math.round(maxW / aspect);
+          } else {
+            targetH = maxH;
+            targetW = Math.round(maxH * aspect);
+          }
+
           const imgId = wb.addImage({ base64, extension: ext });
           ws.addImage(imgId, {
-            tl: { col: 14.1, row: (rowIndex - 1) + 0.08 },
-            br: { col: 14.9, row: (rowIndex - 1) + 0.92 },
+            tl: { col: 14.08, row: (rowIndex - 1) + 0.05 },
+            ext: { width: targetW, height: targetH },
             editAs: 'oneCell'
           });
         }
