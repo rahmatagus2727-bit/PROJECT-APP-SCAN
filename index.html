@@ -2275,62 +2275,64 @@ if (btnTestGdriveSync) {
     let data = {};
 
     try {
-      res = await fetch('/api/gdrive/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          googleScriptUrl: url,
-          payload: sampleItem
-        })
-      });
-      text = await res.text();
       try {
-        data = JSON.parse(text);
-      } catch (parseErr) {
-        data = { success: false, message: text.slice(0, 200) };
-      }
-    } catch (netErr) {
-      data = { success: false, message: netErr.message };
-    }
-
-    // If server call was successful
-    if (data.success) {
-      const sheetUrl = data.data && data.data.spreadsheetUrl ? data.data.spreadsheetUrl : '';
-      const driveUrl = data.data && data.data.folderUrl ? data.data.folderUrl : '';
-      let linksHtml = '';
-      if (sheetUrl) {
-        linksHtml += `<div style="margin-top: 8px;"><a href="${sheetUrl}" target="_blank" rel="noopener" style="color: #60a5fa; font-weight: bold; text-decoration: underline;">📊 Buka Spreadsheet Anda Disini</a></div>`;
-      }
-      if (driveUrl) {
-        linksHtml += `<div style="margin-top: 4px;"><a href="${driveUrl}" target="_blank" rel="noopener" style="color: #60a5fa; text-decoration: underline;">📁 Buka Folder Foto Drive</a></div>`;
-      }
-
-      setGdriveAlert(`🎉 <b>Koneksi Berhasil 100%!</b><br>1 baris data tes telah berhasil masuk ke Google Sheets &amp; Drive Anda.${linksHtml}`, 'ok');
-      GDRIVE_SETTINGS.googleScriptUrl = url;
-      try {
-        localStorage.setItem('apar_gdrive_config', JSON.stringify(GDRIVE_SETTINGS));
-      } catch (e) {}
-      updateGdriveStatusUI();
-      showStatus('🎉 Uji koneksi BERHASIL! 1 baris sampel tersimpan di Google Sheets & Drive.', 'ok');
-    } else {
-      // Fallback: Direct client-side webhook call
-      try {
-        await fetch(url, {
+        res = await fetch('/api/gdrive/sync', {
           method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(sampleItem)
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            googleScriptUrl: url,
+            payload: sampleItem
+          })
         });
-        // With no-cors mode, reaching here without throwing means request dispatched successfully
-        setGdriveAlert(`🎉 <b>Koneksi Berhasil Terkirim!</b><br>Data tes telah dikirim langsung ke Google Apps Script Anda. Silakan periksa Google Sheets Anda.`, 'ok');
+        text = await res.text();
+        try {
+          data = JSON.parse(text);
+        } catch (parseErr) {
+          data = { success: false, message: text.slice(0, 200) };
+        }
+      } catch (netErr) {
+        data = { success: false, message: netErr.message };
+      }
+
+      // If server call was successful
+      if (data.success) {
+        const sheetUrl = data.data && data.data.spreadsheetUrl ? data.data.spreadsheetUrl : '';
+        const driveUrl = data.data && data.data.folderUrl ? data.data.folderUrl : '';
+        let linksHtml = '';
+        if (sheetUrl) {
+          linksHtml += `<div style="margin-top: 8px;"><a href="${sheetUrl}" target="_blank" rel="noopener" style="color: #60a5fa; font-weight: bold; text-decoration: underline;">📊 Buka Spreadsheet Anda Disini</a></div>`;
+        }
+        if (driveUrl) {
+          linksHtml += `<div style="margin-top: 4px;"><a href="${driveUrl}" target="_blank" rel="noopener" style="color: #60a5fa; text-decoration: underline;">📁 Buka Folder Foto Drive</a></div>`;
+        }
+
+        setGdriveAlert(`🎉 <b>Koneksi Berhasil 100%!</b><br>1 baris data tes telah berhasil masuk ke Google Sheets &amp; Drive Anda.${linksHtml}`, 'ok');
         GDRIVE_SETTINGS.googleScriptUrl = url;
         try {
           localStorage.setItem('apar_gdrive_config', JSON.stringify(GDRIVE_SETTINGS));
         } catch (e) {}
         updateGdriveStatusUI();
-        showStatus('🎉 Data tes berhasil dikirim ke Google Sheets!', 'ok');
-      } catch (directErr) {
-        setGdriveAlert(`❌ <b>Uji Koneksi Gagal:</b> ${data.message || directErr.message || 'Periksa kembali URL Web App dan izin akses Google Apps Script.'}`, 'err');
+        showStatus('🎉 Uji koneksi BERHASIL! 1 baris sampel tersimpan di Google Sheets & Drive.', 'ok');
+      } else {
+        // Fallback: Direct client-side webhook call
+        try {
+          await fetch(url, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(sampleItem)
+          });
+          // With no-cors mode, reaching here without throwing means request dispatched successfully
+          setGdriveAlert(`🎉 <b>Koneksi Berhasil Terkirim!</b><br>Data tes telah dikirim langsung ke Google Apps Script Anda. Silakan periksa Google Sheets Anda.`, 'ok');
+          GDRIVE_SETTINGS.googleScriptUrl = url;
+          try {
+            localStorage.setItem('apar_gdrive_config', JSON.stringify(GDRIVE_SETTINGS));
+          } catch (e) {}
+          updateGdriveStatusUI();
+          showStatus('🎉 Data tes berhasil dikirim ke Google Sheets!', 'ok');
+        } catch (directErr) {
+          setGdriveAlert(`❌ <b>Uji Koneksi Gagal:</b> ${data.message || directErr.message || 'Periksa kembali URL Web App dan izin akses Google Apps Script.'}`, 'err');
+        }
       }
     } finally {
       btnTestGdriveSync.disabled = false;
