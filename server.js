@@ -26,103 +26,178 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
 // -------------------------------------------------------------
-// Initialize SQLite Database Engine (sql.js)
+// Initialize SQLite Database Engine (sql.js) with Auto-Healing
 // -------------------------------------------------------------
 let SQL = null;
 let sqliteDb = null;
 
+function createTables(db) {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS inspections (
+      id TEXT PRIMARY KEY,
+      kode TEXT,
+      gedung TEXT,
+      ruangan TEXT,
+      lantai TEXT,
+      merk TEXT,
+      kapasitas TEXT,
+      jenisGas TEXT,
+      kebersihanTabung TEXT,
+      indikatorTekanan TEXT,
+      kunciPengaman TEXT,
+      selangSemprot TEXT,
+      nozzle TEXT,
+      tagLabel TEXT,
+      status TEXT,
+      keterangan TEXT,
+      foto TEXT,
+      pemeriksa TEXT,
+      tanggal TEXT,
+      raw_json TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE,
+      name TEXT,
+      password TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT,
+      details TEXT,
+      pemeriksa TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+}
+
+function restoreFromBackups(db) {
+  // Migrate from JSON if SQLite table is empty but JSON exists
+  try {
+    const rowCheck = db.exec("SELECT COUNT(*) as count FROM inspections");
+    const count = rowCheck[0]?.values[0]?.[0] || 0;
+    if (count === 0 && fs.existsSync(LOG_FILE)) {
+      const raw = fs.readFileSync(LOG_FILE, 'utf-8');
+      const jsonLogs = JSON.parse(raw) || {};
+      for (const key in jsonLogs) {
+        const entry = jsonLogs[key];
+        if (entry && (entry.id || entry.kode)) {
+          const docId = String(entry.kode || entry.id).trim();
+          const rawJson = JSON.stringify(entry);
+          db.run(`
+            INSERT OR REPLACE INTO inspections (
+              id, kode, gedung, ruangan, lantai, merk, kapasitas, jenisGas,
+              kebersihanTabung, indikatorTekanan, kunciPengaman, selangSemprot, nozzle, tagLabel,
+              status, keterangan, foto, pemeriksa, tanggal, raw_json, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          `, [
+            docId,
+            entry.kode || docId,
+            entry.gedung || '',
+            entry.ruangan || '',
+            String(entry.lantai || ''),
+            entry.merk || '',
+            entry.kapasitas || '',
+            entry.jenisGas || '',
+            entry.kebersihanTabung || null,
+            entry.indikatorTekanan || null,
+            entry.kunciPengaman || null,
+            entry.selangSemprot || null,
+            entry.nozzle || null,
+            entry.tagLabel || null,
+            entry.status || 'OK',
+            entry.keterangan || '',
+            entry.foto || null,
+            entry.pemeriksa || 'Petugas',
+            entry.tanggal || new Date().toISOString(),
+            rawJson
+          ]);
+        }
+      }
+      console.log(`✨ Restored ${Object.keys(jsonLogs).length} records from JSON backup to SQLite.`);
+    }
+  } catch (migErr) {
+    console.warn('JSON to SQLite migration notice:', migErr);
+  }
+
+  // Migrate users if empty
+  try {
+    const userCheck = db.exec("SELECT COUNT(*) as count FROM users");
+    const userCount = userCheck[0]?.values[0]?.[0] || 0;
+    if (userCount === 0 && fs.existsSync(USERS_FILE)) {
+      const raw = fs.readFileSync(USERS_FILE, 'utf-8');
+      const jsonUsers = JSON.parse(raw) || [];
+      jsonUsers.forEach(u => {
+        db.run(`INSERT OR IGNORE INTO users (id, email, name, password, created_at) VALUES (?, ?, ?, ?, ?)`,
+          [u.id, u.email, u.name, u.password, u.createdAt || new Date().toISOString()]);
+      });
+    }
+  } catch (uErr) {}
+}
+
+async function rebuildCorruptedDatabase() {
+  console.warn('⚠️ SQLite database corrupted or malformed. Auto-repairing and rebuilding...');
+  try {
+    if (fs.existsSync(SQLITE_FILE)) {
+      try {
+        fs.renameSync(SQLITE_FILE, SQLITE_FILE + '.corrupt_' + Date.now());
+      } catch (e) {
+        fs.unlinkSync(SQLITE_FILE);
+      }
+    }
+  } catch (e) {}
+
+  if (!SQL) {
+    SQL = await initSqlJs();
+  }
+  sqliteDb = new SQL.Database();
+  createTables(sqliteDb);
+  restoreFromBackups(sqliteDb);
+  persistSqliteToDisk();
+  console.log('✅ SQLite database successfully healed and rebuilt.');
+}
+
 async function initSqliteEngine() {
   try {
     SQL = await initSqlJs();
+    let loadedFromDisk = false;
+
     if (fs.existsSync(SQLITE_FILE)) {
-      const fileBuffer = fs.readFileSync(SQLITE_FILE);
-      sqliteDb = new SQL.Database(fileBuffer);
-      console.log('📦 Loaded existing SQLite database from disk.');
-    } else {
-      sqliteDb = new SQL.Database();
-      console.log('🆕 Created new in-memory SQLite database.');
-    }
-
-    // Initialize Schema
-    sqliteDb.run(`
-      CREATE TABLE IF NOT EXISTS inspections (
-        id TEXT PRIMARY KEY,
-        kode TEXT,
-        gedung TEXT,
-        ruangan TEXT,
-        lantai TEXT,
-        merk TEXT,
-        kapasitas TEXT,
-        jenisGas TEXT,
-        kebersihanTabung TEXT,
-        indikatorTekanan TEXT,
-        kunciPengaman TEXT,
-        selangSemprot TEXT,
-        nozzle TEXT,
-        tagLabel TEXT,
-        status TEXT,
-        keterangan TEXT,
-        foto TEXT,
-        pemeriksa TEXT,
-        tanggal TEXT,
-        raw_json TEXT,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        email TEXT UNIQUE,
-        name TEXT,
-        password TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS audit_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        action TEXT,
-        details TEXT,
-        pemeriksa TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // Migrate from JSON if SQLite table is empty but JSON exists
-    const rowCheck = sqliteDb.exec("SELECT COUNT(*) as count FROM inspections");
-    const count = rowCheck[0]?.values[0]?.[0] || 0;
-    if (count === 0 && fs.existsSync(LOG_FILE)) {
       try {
-        const raw = fs.readFileSync(LOG_FILE, 'utf-8');
-        const jsonLogs = JSON.parse(raw) || {};
-        for (const key in jsonLogs) {
-          const entry = jsonLogs[key];
-          if (entry && (entry.id || entry.kode)) {
-            upsertInspectionInSqlite(entry);
-          }
+        const fileBuffer = fs.readFileSync(SQLITE_FILE);
+        if (fileBuffer && fileBuffer.length > 0) {
+          const testDb = new SQL.Database(fileBuffer);
+          // Verify integrity
+          testDb.exec("PRAGMA quick_check;");
+          sqliteDb = testDb;
+          loadedFromDisk = true;
+          console.log('📦 Loaded existing SQLite database from disk (passed integrity check).');
         }
-        console.log(`✨ Migrated ${Object.keys(jsonLogs).length} records from JSON to SQLite.`);
-      } catch (migErr) {
-        console.warn('JSON to SQLite migration notice:', migErr);
+      } catch (loadErr) {
+        console.warn('Existing SQLite file corrupted or unreadable:', loadErr.message);
       }
     }
 
-    // Migrate users if empty
-    const userCheck = sqliteDb.exec("SELECT COUNT(*) as count FROM users");
-    const userCount = userCheck[0]?.values[0]?.[0] || 0;
-    if (userCount === 0 && fs.existsSync(USERS_FILE)) {
-      try {
-        const raw = fs.readFileSync(USERS_FILE, 'utf-8');
-        const jsonUsers = JSON.parse(raw) || [];
-        jsonUsers.forEach(u => {
-          sqliteDb.run(`INSERT OR IGNORE INTO users (id, email, name, password, created_at) VALUES (?, ?, ?, ?, ?)`,
-            [u.id, u.email, u.name, u.password, u.createdAt || new Date().toISOString()]);
-        });
-      } catch (uErr) {}
+    if (!loadedFromDisk) {
+      await rebuildCorruptedDatabase();
+      return;
     }
 
+    createTables(sqliteDb);
+    restoreFromBackups(sqliteDb);
     persistSqliteToDisk();
     console.log('✅ SQLite Database Engine fully initialized.');
   } catch (err) {
-    console.error('Fatal error initializing SQLite engine:', err);
+    console.error('Fatal error initializing SQLite engine, attempting fresh build:', err);
+    try {
+      await rebuildCorruptedDatabase();
+    } catch (rebuildErr) {
+      console.error('Failed to rebuild SQLite database:', rebuildErr);
+    }
   }
 }
 
@@ -131,16 +206,44 @@ function persistSqliteToDisk() {
   try {
     const data = sqliteDb.export();
     const buffer = Buffer.from(data);
-    fs.writeFileSync(SQLITE_FILE, buffer);
+    const tmpFile = SQLITE_FILE + '.tmp';
+    fs.writeFileSync(tmpFile, buffer);
+    fs.renameSync(tmpFile, SQLITE_FILE);
   } catch (err) {
     console.error('Error saving SQLite database to disk:', err);
   }
 }
 
+function syncJsonBackup(docId, entry) {
+  try {
+    let currentLogs = {};
+    if (fs.existsSync(LOG_FILE)) {
+      try {
+        currentLogs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf-8')) || {};
+      } catch (e) {}
+    }
+    if (entry) {
+      currentLogs[docId] = entry;
+    } else {
+      delete currentLogs[docId];
+    }
+    fs.writeFileSync(LOG_FILE, JSON.stringify(currentLogs, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('JSON backup sync error:', e);
+  }
+}
+
 function upsertInspectionInSqlite(entry) {
-  if (!sqliteDb || !entry) return;
+  if (!entry) return;
   const docId = String(entry.kode || entry.id).trim();
   const rawJson = JSON.stringify(entry);
+
+  // Sync to JSON backup file
+  syncJsonBackup(docId, entry);
+
+  if (!sqliteDb) {
+    return;
+  }
 
   const stmt = `
     INSERT INTO inspections (
@@ -171,44 +274,91 @@ function upsertInspectionInSqlite(entry) {
       updated_at = CURRENT_TIMESTAMP;
   `;
 
-  sqliteDb.run(stmt, [
-    docId,
-    entry.kode || docId,
-    entry.gedung || '',
-    entry.ruangan || '',
-    String(entry.lantai || ''),
-    entry.merk || '',
-    entry.kapasitas || '',
-    entry.jenisGas || '',
-    entry.kebersihanTabung || null,
-    entry.indikatorTekanan || null,
-    entry.kunciPengaman || null,
-    entry.selangSemprot || null,
-    entry.nozzle || null,
-    entry.tagLabel || null,
-    entry.status || 'OK',
-    entry.keterangan || '',
-    entry.foto || null,
-    entry.pemeriksa || 'Petugas',
-    entry.tanggal || new Date().toISOString(),
-    rawJson
-  ]);
+  try {
+    sqliteDb.run(stmt, [
+      docId,
+      entry.kode || docId,
+      entry.gedung || '',
+      entry.ruangan || '',
+      String(entry.lantai || ''),
+      entry.merk || '',
+      entry.kapasitas || '',
+      entry.jenisGas || '',
+      entry.kebersihanTabung || null,
+      entry.indikatorTekanan || null,
+      entry.kunciPengaman || null,
+      entry.selangSemprot || null,
+      entry.nozzle || null,
+      entry.tagLabel || null,
+      entry.status || 'OK',
+      entry.keterangan || '',
+      entry.foto || null,
+      entry.pemeriksa || 'Petugas',
+      entry.tanggal || new Date().toISOString(),
+      rawJson
+    ]);
 
-  // Insert audit log
-  sqliteDb.run(`INSERT INTO audit_logs (action, details, pemeriksa) VALUES (?, ?, ?)`, [
-    'INSPECTION_SAVE',
-    `Pemeriksaan APAR kode: ${docId}`,
-    entry.pemeriksa || 'Petugas'
-  ]);
+    // Insert audit log
+    sqliteDb.run(`INSERT INTO audit_logs (action, details, pemeriksa) VALUES (?, ?, ?)`, [
+      'INSPECTION_SAVE',
+      `Pemeriksaan APAR kode: ${docId}`,
+      entry.pemeriksa || 'Petugas'
+    ]);
 
-  persistSqliteToDisk();
+    persistSqliteToDisk();
+  } catch (dbErr) {
+    console.error('Error writing to SQLite, attempting recovery:', dbErr.message);
+    rebuildCorruptedDatabase().then(() => {
+      try {
+        sqliteDb.run(stmt, [
+          docId,
+          entry.kode || docId,
+          entry.gedung || '',
+          entry.ruangan || '',
+          String(entry.lantai || ''),
+          entry.merk || '',
+          entry.kapasitas || '',
+          entry.jenisGas || '',
+          entry.kebersihanTabung || null,
+          entry.indikatorTekanan || null,
+          entry.kunciPengaman || null,
+          entry.selangSemprot || null,
+          entry.nozzle || null,
+          entry.tagLabel || null,
+          entry.status || 'OK',
+          entry.keterangan || '',
+          entry.foto || null,
+          entry.pemeriksa || 'Petugas',
+          entry.tanggal || new Date().toISOString(),
+          rawJson
+        ]);
+        persistSqliteToDisk();
+      } catch (retryErr) {
+        console.error('Retry after healing failed:', retryErr);
+      }
+    });
+  }
 }
 
 function getAllInspectionsFromSqlite() {
-  if (!sqliteDb) return {};
+  if (!sqliteDb) {
+    if (fs.existsSync(LOG_FILE)) {
+      try {
+        return JSON.parse(fs.readFileSync(LOG_FILE, 'utf-8')) || {};
+      } catch (e) {}
+    }
+    return {};
+  }
   try {
     const res = sqliteDb.exec("SELECT id, raw_json FROM inspections");
-    if (!res || !res[0]) return {};
+    if (!res || !res[0]) {
+      if (fs.existsSync(LOG_FILE)) {
+        try {
+          return JSON.parse(fs.readFileSync(LOG_FILE, 'utf-8')) || {};
+        } catch (e) {}
+      }
+      return {};
+    }
     const dict = {};
     res[0].values.forEach(([id, rawJson]) => {
       try {
@@ -220,6 +370,13 @@ function getAllInspectionsFromSqlite() {
     return dict;
   } catch (err) {
     console.error('Error querying inspections from SQLite:', err);
+    // Auto-heal on malformed error
+    rebuildCorruptedDatabase();
+    if (fs.existsSync(LOG_FILE)) {
+      try {
+        return JSON.parse(fs.readFileSync(LOG_FILE, 'utf-8')) || {};
+      } catch (e) {}
+    }
     return {};
   }
 }
