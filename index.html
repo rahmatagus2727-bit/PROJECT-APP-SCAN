@@ -434,15 +434,16 @@
             </div>
             <pre class="script-code-box" id="scriptCodeBlock">/**
  * GOOGLE APPS SCRIPT - SISTEM PEMELIHARAAN APAR (KODE 1 - 128)
- * Format Kolom & Header 100% Persis Template Master Data FSS / APAR
+ * Otomatis Menyematkan Foto Langsung di Dalam Sel Google Sheets
  * 
- * CARA PASANG:
- * 1. Di Google Sheets: Klik Extensions > Apps Script
- * 2. Hapus semua isi, Paste kode ini, lalu klik Simpan (Ctrl+S)
- * 3. Klik Deploy > New deployment > Jenis: Web app
- *    - Execute as: Me (email Anda)
- *    - Who has access: Anyone (Wajib pilih "Anyone" agar bisa diakses aplikasi)
- * 4. Salin Web App URL (akhiran /exec) dan simpan di aplikasi.
+ * CARA PASANG / UPDATE SCRIPT:
+ * 1. Di Google Sheets: Klik menu Extensions (Ekstensi) > Apps Script
+ * 2. Hapus semua kode lama, Tempel (Paste) kode di bawah ini, lalu klik Simpan (Ctrl+S)
+ * 3. Klik tombol biru "Deploy" (kanan atas) > "Manage deployments" (Kelola deployment)
+ *    - Klik ikon Pensil (Edit)
+ *    - Pada baris Version, pilih "New version" (Versi baru)
+ *    - Klik "Deploy"
+ * 4. Selesai! Foto eviden akan langsung tampil otomatis sebagai gambar di Spreadsheet Anda.
  */
 
 function doPost(e) {
@@ -495,7 +496,6 @@ function handleRequest(e) {
     var sheet = ss.getSheetByName("DATA FSS & APAR");
     if (!sheet) {
       sheet = ss.getSheetByName("Inspeksi APAR") || ss.getActiveSheet();
-      sheet.setName("DATA FSS & APAR");
     }
     
     // Inisialisasi Header Standar jika sheet baru/kosong
@@ -514,7 +514,8 @@ function handleRequest(e) {
       var kodeStr = String(item.kode || item.id || "").trim();
       if (!kodeStr) return;
       
-      var photoUrl = "";
+      var photoViewUrl = "";
+      var directPhotoUrl = "";
       
       // Upload Foto Base64 ke Google Drive
       if (item.foto && typeof item.foto === 'string' && item.foto.indexOf("data:image") === 0) {
@@ -527,14 +528,22 @@ function handleRequest(e) {
           var blob = Utilities.newBlob(decoded, contentType, fileName);
           var file = folder.createFile(blob);
           file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          photoUrl = file.getUrl();
+          var fileId = file.getId();
+          photoViewUrl = file.getUrl();
+          // Link direct image streaming yang 100% didukung formula =IMAGE() di Google Sheets
+          directPhotoUrl = "https://lh3.googleusercontent.com/d/" + fileId;
         } catch (imgErr) {
-          photoUrl = "Error upload foto: " + imgErr.toString();
+          photoViewUrl = "Error upload foto: " + imgErr.toString();
         }
       } else if (item.photoDriveUrl) {
-        photoUrl = item.photoDriveUrl;
+        photoViewUrl = item.photoDriveUrl;
+        var match = photoViewUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+        if (match && match[1]) {
+          directPhotoUrl = "https://lh3.googleusercontent.com/d/" + match[1];
+        }
       } else if (item.foto && typeof item.foto === 'string' && item.foto.indexOf("http") === 0) {
-        photoUrl = item.foto;
+        photoViewUrl = item.foto;
+        directPhotoUrl = item.foto;
       }
       
       var kebersihan = item.kebersihanTabung === "good" ? "Bersih" : (item.kebersihanTabung === "bad" ? "Kotor" : (item.kebersihanTabung || "-"));
@@ -544,7 +553,6 @@ function handleRequest(e) {
       var nozzle = item.nozzle === "good" ? "Ada" : (item.nozzle === "bad" ? "Tidak Ada" : (item.nozzle || "-"));
       var tag = item.tagLabel === "good" ? "Ada" : (item.tagLabel === "bad" ? "Tidak Ada" : (item.tagLabel || "-"));
       var tgl = item.tanggal ? Utilities.formatDate(new Date(item.tanggal), "Asia/Jakarta", "dd/MM/yyyy HH:mm") : Utilities.formatDate(new Date(), "Asia/Jakarta", "dd/MM/yyyy HH:mm");
-      var fotoFormula = photoUrl ? ('=IMAGE("' + photoUrl + '")') : (item.foto ? "📷 Ada Foto" : "-");
 
       var rowValues = [
         kodeStr,
@@ -561,8 +569,8 @@ function handleRequest(e) {
         nozzle,
         tag,
         item.keterangan || "-",
-        fotoFormula,
-        photoUrl || (item.foto ? "Tersimpan di Aplikasi" : "-"),
+        directPhotoUrl ? "" : "-", // Kolom 15: Foto Eviden (diisi via formula)
+        photoViewUrl || (item.foto ? "Tersimpan di Aplikasi" : "-"), // Kolom 16: Link Drive
         tgl,
         item.pemeriksa || "Petugas",
         item.status || "✅ Selesai"
@@ -572,8 +580,17 @@ function handleRequest(e) {
       var targetRow = findRowByKode(sheet, kodeStr);
       if (targetRow > 2) {
         sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
+        if (directPhotoUrl) {
+          sheet.getRange(targetRow, 15).setFormula('=IMAGE("' + directPhotoUrl + '", 1)');
+          sheet.setRowHeight(targetRow, 70);
+        }
       } else {
         sheet.appendRow(rowValues);
+        var newRow = sheet.getLastRow();
+        if (directPhotoUrl) {
+          sheet.getRange(newRow, 15).setFormula('=IMAGE("' + directPhotoUrl + '", 1)');
+          sheet.setRowHeight(newRow, 70);
+        }
       }
       processedCount++;
     });
@@ -666,7 +683,11 @@ function initHeaderIfEmpty(sheet) {
   // Row 2 Colors
   sheet.getRange("A2:G2").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
   sheet.getRange("H2:M2").setBackground("#c00000").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("N2:N2").setBackground("#c00000").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("O2:S2").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
   
+  sheet.setColumnWidth(15, 125); // Kolom Foto Eviden
+  sheet.setColumnWidth(16, 160); // Kolom Link Drive
   sheet.setFrozenRows(2);
 }</pre>
           </div>
@@ -1396,7 +1417,7 @@ const fotoPreview = document.getElementById('fotoPreview');
 const btnUploadFoto = document.getElementById('btnUploadFoto');
 const btnHapusFoto = document.getElementById('btnHapusFoto');
 
-function compressImage(file, maxDim = 640, quality = 0.5) {
+function compressImage(file, maxDim = 1280, quality = 0.85) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();
@@ -1415,6 +1436,8 @@ function compressImage(file, maxDim = 640, quality = 0.5) {
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, width, height);
       resolve(canvas.toDataURL('image/jpeg', quality));
     };
@@ -2153,8 +2176,8 @@ async function downloadExcel() {
     { width: 16 }, // Pemeriksaan Nozzle
     { width: 16 }, // TAG Label Pemeliharaan
     { width: 28 }, // KETERANGAN
-    { width: 20 }, // FOTO BUKTI (EVIDEN)
-    { width: 22 }, // LINK FOTO DRIVE
+    { width: 28 }, // FOTO BUKTI (EVIDEN)
+    { width: 25 }, // LINK FOTO DRIVE
     { width: 20 }, // TANGGAL PEMERIKSAAN
     { width: 18 }, // PETUGAS
     { width: 14 }, // STATUS
@@ -2166,6 +2189,7 @@ async function downloadExcel() {
     const status = entry ? '✅ Selesai' : 'Belum Diperiksa';
     const tgl = entry && entry.tanggal ? new Date(entry.tanggal).toLocaleString('id-ID') : '-';
     const pemeriksa = entry && entry.pemeriksa ? entry.pemeriksa : '-';
+    const hasPhoto = entry && entry.foto && typeof entry.foto === 'string' && entry.foto.startsWith('data:image');
 
     const row = ws.addRow([
       data.kode ?? data.no ?? '',
@@ -2182,14 +2206,14 @@ async function downloadExcel() {
       entry ? (entry.nozzle === 'good' ? 'Ada' : entry.nozzle === 'bad' ? 'Tidak Ada' : '-') : '-',
       entry ? (entry.tagLabel === 'good' ? 'Ada' : entry.tagLabel === 'bad' ? 'Tidak Ada' : '-') : '-',
       entry && entry.keterangan ? entry.keterangan : '-',
-      entry && entry.foto ? '📷 Ada Foto' : '-',
-      entry && entry.photoDriveUrl ? entry.photoDriveUrl : (entry && entry.foto ? 'Tersimpan di Aplikasi' : '-'),
+      hasPhoto ? '' : '-',
+      entry && entry.photoDriveUrl ? entry.photoDriveUrl : (hasPhoto ? 'Tersimpan di Aplikasi' : '-'),
       tgl,
       pemeriksa,
       status
     ]);
 
-    row.height = entry && entry.foto ? 72 : 22;
+    row.height = hasPhoto ? 82 : 24;
 
     row.eachCell(cell => {
       cell.alignment = { vertical: 'middle', wrapText: true, horizontal: 'center' };
@@ -2205,8 +2229,8 @@ async function downloadExcel() {
     row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
     row.getCell(14).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
 
-    // Embed Image Thumbnail in Column 15 (O)
-    if (entry && entry.foto && typeof entry.foto === 'string' && entry.foto.startsWith('data:image')) {
+    // Embed Image Thumbnail accurately centered in Column 15 (O) with neat margin
+    if (hasPhoto) {
       try {
         const match = /^data:image\/(png|jpe?g);base64,/.exec(entry.foto);
         const ext = match ? (match[1] === 'jpg' ? 'jpeg' : match[1]) : 'jpeg';
@@ -2214,8 +2238,8 @@ async function downloadExcel() {
         if (base64) {
           const imgId = wb.addImage({ base64, extension: ext });
           ws.addImage(imgId, {
-            tl: { col: 14, row: rowIndex - 1 },
-            ext: { width: 90, height: 68 },
+            tl: { col: 14.1, row: (rowIndex - 1) + 0.08 },
+            br: { col: 14.9, row: (rowIndex - 1) + 0.92 },
             editAs: 'oneCell'
           });
         }
