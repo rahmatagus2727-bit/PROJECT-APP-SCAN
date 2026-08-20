@@ -435,8 +435,7 @@
             <pre class="script-code-box" id="scriptCodeBlock">/**
  * =========================================================================
  * GOOGLE APPS SCRIPT - SISTEM PEMELIHARAAN APAR (KODE 1 - 128)
- * Otomatis Menyematkan Foto Langsung ke Dalam Sel Google Sheets (In-Cell Image)
- * &amp; Format Rapi Otomatis (Teks Dibungkus / Text Wrap, Kolom &amp; Baris Pas)
+ * Format Rapi Otomatis (Teks Dibungkus / Text Wrap, Link Drive &amp; Kolom Pas)
  * =========================================================================
  * 
  * PANDUAN PEMASANGAN / UPDATE SCRIPT:
@@ -449,31 +448,23 @@
  *    - Pada bagian "Who has access", pastikan terpilih "Anyone" (Siapa saja).
  *    - Klik "Deploy".
  * 5. Salin "Web App URL" (yang berakhiran /exec) dan tempelkan ke aplikasi APAR Anda.
- * 6. Selesai! Foto dan teks tabel akan otomatis rapi dan tidak terpotong.
+ * 6. Selesai! Tabel akan rapi tanpa kolom foto eviden ganda yang terpotong.
  */
 
 function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('📌 Menu APAR')
-    .addItem('✨ Rapikan Seluruh Tabel (Bungkus Teks & Lebar Kolom)', 'menuRapikanTabel')
-    .addItem('🖼️ Ubah Semua Link Drive Menjadi Foto di Sel', 'menuKonversiLinkKeFoto')
-    .addItem('📐 Atur Tinggi Baris Data Foto (75px)', 'menuRapikanTinggiBaris')
+    .addItem('✨ Rapikan Tabel & Hapus Kolom Foto Eviden Lama', 'menuRapikanTabel')
+    .addItem('📐 Atur Tinggi Baris Rapi (32px)', 'menuRapikanTinggiBaris')
     .addToUi();
 }
 
 function menuRapikanTabel() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getActiveSheet();
+  hapusKolomFotoEvidenLama(sheet);
   rapikanFormatTabel(sheet);
-  SpreadsheetApp.getUi().alert("✅ Berhasil! Seluruh judul header dan isi tabel telah dirapikan (Teks dibungkus rapi, lebar kolom & tinggi baris disesuaikan).");
-}
-
-function menuKonversiLinkKeFoto() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getActiveSheet();
-  var count = konversiSemuaLinkMenjadiFoto(sheet);
-  rapikanFormatTabel(sheet);
-  SpreadsheetApp.getUi().alert("✅ Berhasil! " + count + " link foto Google Drive telah diubah menjadi gambar langsung di dalam sel.");
+  SpreadsheetApp.getUi().alert("✅ Berhasil! Kolom Foto Eviden telah dihapus, teks dibungkus rapi, dan seluruh lebar kolom telah disesuaikan secara proporsional.");
 }
 
 function menuRapikanTinggiBaris() {
@@ -481,10 +472,8 @@ function menuRapikanTinggiBaris() {
   var sheet = ss.getActiveSheet();
   var lastRow = sheet.getLastRow();
   if (lastRow >= 3) {
-    sheet.setRowHeights(3, lastRow - 2, 75);
-    SpreadsheetApp.getUi().alert("✅ Tinggi semua baris data telah diatur ke 75px agar foto terlihat jelas.");
-  } else if (lastRow >= 2) {
-    sheet.setRowHeights(2, lastRow - 1, 75);
+    sheet.setRowHeights(3, lastRow - 2, 32);
+    SpreadsheetApp.getUi().alert("✅ Tinggi semua baris data telah diatur rapi.");
   }
 }
 
@@ -540,6 +529,9 @@ function handleRequest(e) {
     // Inisialisasi Header Standar jika sheet benar-benar kosong
     if (sheet.getLastRow() === 0) {
       initHeaderIfEmpty(sheet);
+    } else {
+      // Hapus kolom foto eviden jika ada di sheet lama
+      hapusKolomFotoEvidenLama(sheet);
     }
     
     // Siapkan folder foto Google Drive
@@ -559,7 +551,6 @@ function handleRequest(e) {
       if (!kodeStr) return;
       
       var photoViewUrl = "";
-      var directPhotoUrl = "";
       
       // Upload Foto Base64 ke Google Drive
       if (item.foto && typeof item.foto === 'string' && item.foto.indexOf("data:image") === 0) {
@@ -572,27 +563,14 @@ function handleRequest(e) {
           var blob = Utilities.newBlob(decoded, contentType, fileName);
           var file = folder.createFile(blob);
           file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-          var fileId = file.getId();
           photoViewUrl = file.getUrl();
-          // Link direct image streaming untuk formula =IMAGE() & newCellImage di Google Sheets
-          directPhotoUrl = "https://lh3.googleusercontent.com/d/" + fileId;
         } catch (imgErr) {
-          photoViewUrl = "Error upload foto: " + imgErr.toString();
+          photoViewUrl = "Error upload: " + imgErr.toString();
         }
       } else if (item.photoDriveUrl) {
         photoViewUrl = item.photoDriveUrl;
-        var match = photoViewUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || photoViewUrl.match(/id=([a-zA-Z0-9_-]+)/);
-        if (match && match[1]) {
-          directPhotoUrl = "https://lh3.googleusercontent.com/d/" + match[1];
-        }
       } else if (item.foto && typeof item.foto === 'string' && item.foto.indexOf("http") === 0) {
         photoViewUrl = item.foto;
-        var match2 = photoViewUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || photoViewUrl.match(/id=([a-zA-Z0-9_-]+)/);
-        if (match2 && match2[1]) {
-          directPhotoUrl = "https://lh3.googleusercontent.com/d/" + match2[1];
-        } else {
-          directPhotoUrl = item.foto;
-        }
       }
       
       var kebersihan = item.kebersihanTabung === "good" ? "Bersih" : (item.kebersihanTabung === "bad" ? "Kotor" : (item.kebersihanTabung || "-"));
@@ -625,33 +603,26 @@ function handleRequest(e) {
       tulisNilaiSel(sheet, targetRow, colMap.nozzleCol, nozzle, "center");
       tulisNilaiSel(sheet, targetRow, colMap.tagCol, tag, "center");
       tulisNilaiSel(sheet, targetRow, colMap.keteranganCol, item.keterangan || "-", "left");
+      
+      // Tulis Link Foto Google Drive
+      if (colMap.linkDriveCol > 0) {
+        tulisNilaiSel(sheet, targetRow, colMap.linkDriveCol, photoViewUrl || "-", "left");
+      }
+      
       tulisNilaiSel(sheet, targetRow, colMap.tanggalCol, tgl, "center");
       tulisNilaiSel(sheet, targetRow, colMap.petugasCol, item.pemeriksa || "Petugas", "center");
       tulisNilaiSel(sheet, targetRow, colMap.statusCol, item.status || "✅ Selesai", "center");
 
-      // TULIS FOTO SEBAGAI GAMBAR LANGSUNG DI DALAM SEL (KOLOM FOTO EVIDEN)
-      if (colMap.fotoCol > 0) {
-        sematkanFotoKeSel(sheet, targetRow, colMap.fotoCol, directPhotoUrl, kodeStr);
-      }
-      
-      // Jika ada kolom terpisah untuk Link Drive
-      if (colMap.linkDriveCol > 0 && colMap.linkDriveCol !== colMap.fotoCol) {
-        tulisNilaiSel(sheet, targetRow, colMap.linkDriveCol, photoViewUrl || "-", "left");
-      }
-
-      sheet.setRowHeight(targetRow, 75);
+      sheet.setRowHeight(targetRow, 32);
       processedCount++;
     });
-    
-    // Otomatis ubah semua link lama di sheet menjadi foto gambar asli
-    konversiSemuaLinkMenjadiFoto(sheet);
     
     // Rapikan layout, lebar kolom, dan bungkus teks agar tidak terpotong
     rapikanFormatTabel(sheet);
     
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
-      message: "Berhasil memproses " + processedCount + " data APAR ke Google Sheets dengan foto tersemat langsung di dalam sel.",
+      message: "Berhasil memproses " + processedCount + " data APAR ke Google Sheets & Drive.",
       spreadsheetUrl: ss.getUrl(),
       folderUrl: folder.getUrl(),
       processedCount: processedCount
@@ -675,29 +646,8 @@ function tulisNilaiSel(sheet, row, col, val, align) {
   }
 }
 
-function sematkanFotoKeSel(sheet, row, col, directPhotoUrl, kodeStr) {
-  if (!directPhotoUrl || col <= 0 || row <= 0) return;
-  var range = sheet.getRange(row, col);
-  
-  // Gunakan formula =IMAGE(...) yang kompatibel 100% dengan Google Sheets
-  try {
-    range.setFormula('=IMAGE("' + directPhotoUrl + '", 1)');
-    range.setHorizontalAlignment("center").setVerticalAlignment("middle");
-  } catch (e) {
-    try {
-      var cellImage = SpreadsheetApp.newCellImage()
-        .setSourceUrl(directPhotoUrl)
-        .setAltTextTitle("Foto APAR " + kodeStr)
-        .build();
-      range.setValue(cellImage);
-    } catch (e2) {
-      range.setValue(directPhotoUrl);
-    }
-  }
-}
-
 function deteksiStrukturKolom(sheet) {
-  var lastCol = Math.max(sheet.getLastColumn(), 19);
+  var lastCol = Math.max(sheet.getLastColumn(), 18);
   var lastRow = Math.max(sheet.getLastRow(), 3);
   var row1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0] || [];
   var row2 = lastRow >= 2 ? (sheet.getRange(2, 1, 1, lastCol).getValues()[0] || []) : [];
@@ -718,11 +668,10 @@ function deteksiStrukturKolom(sheet) {
     nozzleCol: 12,
     tagCol: 13,
     keteranganCol: 14,
-    fotoCol: 15,
-    linkDriveCol: 16,
-    tanggalCol: 17,
-    petugasCol: 18,
-    statusCol: 19
+    linkDriveCol: 15,
+    tanggalCol: 16,
+    petugasCol: 17,
+    statusCol: 18
   };
 
   // Cek apakah header 1 baris atau 2 baris (merged)
@@ -762,11 +711,8 @@ function deteksiStrukturKolom(sheet) {
     else if (h.indexOf("nozzle") !== -1 || h.indexOf("corong") !== -1) map.nozzleCol = colIdx;
     else if (h.indexOf("tag") !== -1 || h.indexOf("label") !== -1) map.tagCol = colIdx;
     else if (h.indexOf("keterangan") !== -1 || h.indexOf("catatan") !== -1 || h.indexOf("note") !== -1) map.keteranganCol = colIdx;
-    else if (h.indexOf("link") !== -1 && (h.indexOf("drive") !== -1 || h.indexOf("foto") !== -1)) {
+    else if (h.indexOf("link") !== -1 || h.indexOf("drive") !== -1 || h.indexOf("foto") !== -1 || h.indexOf("eviden") !== -1 || h.indexOf("gambar") !== -1 || h.indexOf("dokumentasi") !== -1) {
       map.linkDriveCol = colIdx;
-    }
-    else if (h.indexOf("foto") !== -1 || h.indexOf("eviden") !== -1 || h.indexOf("gambar") !== -1 || h.indexOf("dokumentasi") !== -1) {
-      map.fotoCol = colIdx;
     }
     else if (h.indexOf("tanggal") !== -1 || h.indexOf("tgl") !== -1 || h.indexOf("waktu") !== -1) map.tanggalCol = colIdx;
     else if (h.indexOf("petugas") !== -1 || h.indexOf("pemeriksa") !== -1) map.petugasCol = colIdx;
@@ -789,44 +735,27 @@ function cariBarisByKode(sheet, kodeCol, startRow, kode) {
   return -1;
 }
 
-function konversiSemuaLinkMenjadiFoto(sheet) {
-  var lastRow = sheet.getLastRow();
+function hapusKolomFotoEvidenLama(sheet) {
   var lastCol = sheet.getLastColumn();
-  if (lastRow < 2 || lastCol < 1) return 0;
+  if (lastCol < 1) return;
+  var row1 = sheet.getRange(1, 1, 1, lastCol).getValues()[0] || [];
+  var row2 = sheet.getLastRow() >= 2 ? (sheet.getRange(2, 1, 1, lastCol).getValues()[0] || []) : [];
   
-  var range = sheet.getRange(1, 1, lastRow, lastCol);
-  var values = range.getValues();
-  var count = 0;
-  
-  for (var r = 0; r < values.length; r++) {
-    for (var c = 0; c < values[r].length; c++) {
-      var val = String(values[r][c] || "");
-      if (val.indexOf("drive.google.com") !== -1 || val.indexOf("googleusercontent.com") !== -1) {
-        var match = val.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || val.match(/id=([a-zA-Z0-9_-]+)/) || val.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        var fileId = match ? match[1] : "";
-        if (fileId) {
-          var directUrl = "https://lh3.googleusercontent.com/d/" + fileId;
-          var cell = sheet.getRange(r + 1, c + 1);
-          try {
-            cell.setFormula('=IMAGE("' + directUrl + '", 1)');
-          } catch(e) {
-            try {
-              var img = SpreadsheetApp.newCellImage().setSourceUrl(directUrl).build();
-              cell.setValue(img);
-            } catch(e2){}
-          }
-          cell.setHorizontalAlignment("center").setVerticalAlignment("middle");
-          sheet.setRowHeight(r + 1, 75);
-          count++;
-        }
-      }
+  for (var c = lastCol - 1; c >= 0; c--) {
+    var h1 = String(row1[c] || "").toLowerCase().trim();
+    var h2 = String(row2[c] || "").toLowerCase().trim();
+    var full = h1 + " " + h2;
+    // Deteksi jika ini kolom "Foto Bukti (Eviden)" tapi BUKAN "Link Foto Drive"
+    if ((full.indexOf("eviden") !== -1 || full.indexOf("foto bukti") !== -1) && full.indexOf("link") === -1 && full.indexOf("drive") === -1) {
+      try {
+        sheet.deleteColumn(c + 1);
+      } catch (e) {}
     }
   }
-  return count;
 }
 
 function rapikanFormatTabel(sheet) {
-  var lastCol = Math.max(sheet.getLastColumn(), 19);
+  var lastCol = Math.max(sheet.getLastColumn(), 18);
   var lastRow = Math.max(sheet.getLastRow(), 2);
   
   // 1. Atur Wrap Text (Bungkus Teks) pada seluruh isi lembar kerja agar tidak ada teks terpotong
@@ -838,7 +767,7 @@ function rapikanFormatTabel(sheet) {
   sheet.setRowHeight(1, 36);
   sheet.setRowHeight(2, 50);
   
-  // 3. Atur lebar kolom standar yang proporsional dan tidak sempit
+  // 3. Atur lebar kolom standar (18 kolom bersih)
   var colWidths = [
     90,  // Col 1 (A) : KODE
     165, // Col 2 (B) : RUANGAN
@@ -854,11 +783,10 @@ function rapikanFormatTabel(sheet) {
     120, // Col 12 (L): Pemeriksaan Nozzle
     135, // Col 13 (M): TAG Label Pemeliharaan
     190, // Col 14 (N): KETERANGAN
-    140, // Col 15 (O): FOTO BUKTI (EVIDEN)
-    165, // Col 16 (P): LINK FOTO DRIVE
-    150, // Col 17 (Q): TANGGAL PEMERIKSAAN
-    160, // Col 18 (R): PETUGAS PEMERIKSA
-    120  // Col 19 (S): STATUS
+    180, // Col 15 (O): LINK FOTO DRIVE
+    150, // Col 16 (P): TANGGAL PEMERIKSAAN
+    160, // Col 17 (Q): PETUGAS PEMERIKSA
+    120  // Col 18 (R): STATUS
   ];
   
   for (var i = 0; i < colWidths.length; i++) {
@@ -872,12 +800,11 @@ function rapikanFormatTabel(sheet) {
 function initHeaderIfEmpty(sheet) {
   if (sheet.getLastRow() > 0) return;
   
-  // Row 1: Merged Headers
+  // Row 1: Merged Headers (Total 18 Kolom A s/d R)
   var row1 = [
     "APAR", "", "", "", "", "", "",
     "KONDISI", "", "", "", "", "",
     "KETERANGAN",
-    "FOTO BUKTI (EVIDEN)",
     "LINK FOTO DRIVE",
     "TANGGAL PEMERIKSAAN",
     "PETUGAS PEMERIKSA",
@@ -900,7 +827,6 @@ function initHeaderIfEmpty(sheet) {
     "Pemeriksaan Nozzle",
     "TAG Label Pemeliharaan",
     "KETERANGAN",
-    "FOTO BUKTI (EVIDEN)",
     "LINK FOTO DRIVE",
     "TANGGAL PEMERIKSAAN",
     "PETUGAS PEMERIKSA",
@@ -918,19 +844,18 @@ function initHeaderIfEmpty(sheet) {
   sheet.getRange("P1:P2").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
   sheet.getRange("Q1:Q2").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
   sheet.getRange("R1:R2").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
-  sheet.getRange("S1:S2").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
   
   // Row 1 Colors
   sheet.getRange("A1:G1").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold");
   sheet.getRange("H1:M1").setBackground("#c00000").setFontColor("#ffffff").setFontWeight("bold");
   sheet.getRange("N1:N2").setBackground("#c00000").setFontColor("#ffffff").setFontWeight("bold");
-  sheet.getRange("O1:S2").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold");
+  sheet.getRange("O1:R2").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold");
   
   // Row 2 Colors
   sheet.getRange("A2:G2").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
   sheet.getRange("H2:M2").setBackground("#c00000").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
   sheet.getRange("N2:N2").setBackground("#c00000").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
-  sheet.getRange("O2:S2").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("O2:R2").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
   
   sheet.setFrozenRows(2);
   rapikanFormatTabel(sheet);
