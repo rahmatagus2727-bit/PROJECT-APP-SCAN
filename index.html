@@ -298,6 +298,32 @@
             <button type="button" id="btnSyncUsersToFirebase" class="btn btn-secondary" style="width: 100%;">
               🔄 Sinkronkan Akun ke Firebase Firestore
             </button>
+
+            <!-- Collapsible Tutorial Firebase Rules -->
+            <div style="margin-top: 14px; padding: 12px; background: rgba(30, 41, 59, 0.6); border: 1px dashed var(--border); border-radius: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="document.getElementById('firebaseRulesGuide').classList.toggle('hidden');">
+                <span style="font-size: 0.82rem; font-weight: 600; color: #38bdf8;">📖 Tutorial Wajib Pengaturan Firebase</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Klik Buka/Tutup</span>
+              </div>
+              <div id="firebaseRulesGuide" class="hidden" style="margin-top: 10px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5;">
+                <p style="margin: 0 0 6px 0; color: var(--text-main);"><strong>Langkah Setting di Firebase Console (Hanya 1x):</strong></p>
+                <ol style="padding-left: 18px; margin: 0 0 8px 0;">
+                  <li>Buka <a href="https://console.firebase.google.com" target="_blank" style="color:#38bdf8;">console.firebase.google.com</a> &gt; Pilih project <b>apar-fss</b>.</li>
+                  <li>Di menu kiri: <b>Build</b> &gt; <b>Firestore Database</b> &gt; Klik <b>Create database</b> (Pilih Region: <i>asia-southeast2 / Jakarta</i>).</li>
+                  <li>Buka tab <b>Rules (Aturan)</b> di bagian atas Firestore Database.</li>
+                  <li>Ubah aturannya menjadi seperti di bawah ini, lalu klik <b>Publish (Publikasikan)</b>:</li>
+                </ol>
+                <pre style="background:#0f172a; padding:8px; border-radius:6px; font-size:0.72rem; color:#4ade80; overflow-x:auto; margin:0 0 6px 0;">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}</pre>
+                <span style="font-size:0.72rem; color:#f59e0b;">⚠️ Jika Firestore Database belum dibuat atau Rules ditolak, aplikasi akan otomatis beralih ke Database Server &amp; Cache Lokal sehingga sistem tetap berjalan lancar tanpa macet.</span>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -1073,58 +1099,73 @@ if (formAdminAddUser) {
     };
 
     try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, role })
-      });
+      // 1. Save to Backend Server with short timeout (max 3s)
+      try {
+        const fetchController = new AbortController();
+        const timeoutId = setTimeout(() => fetchController.abort(), 3000);
+        const res = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password, role }),
+          signal: fetchController.signal
+        });
+        clearTimeout(timeoutId);
 
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await res.json();
-        if (data && data.user) {
-          newUserObj = { ...newUserObj, ...data.user };
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data && data.user) {
+            newUserObj = { ...newUserObj, ...data.user };
+          }
+        }
+      } catch (backendErr) {
+        console.warn('Backend user save notice:', backendErr);
+      }
+
+      // 2. Save to Local Memory and Storage
+      cachedAdminUsers.push(newUserObj);
+      try {
+        localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
+      } catch (e) {}
+
+      // 3. Optional sync to Firebase Firestore (non-blocking with timeout 3s)
+      if (db && isFirebaseConfigured()) {
+        try {
+          const docId = String(newUserObj.id || email).replace(/[^a-zA-Z0-9_-]/g, '_');
+          const savePromise = db.collection('users').doc(docId).set({
+            id: newUserObj.id,
+            name: newUserObj.name,
+            email: newUserObj.email,
+            role: newUserObj.role,
+            createdAt: new Date().toISOString()
+          }, { merge: true });
+
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Firestore timeout')), 3000)
+          );
+          await Promise.race([savePromise, timeoutPromise]);
+        } catch (fbErr) {
+          console.warn('Firestore user save notice:', fbErr);
         }
       }
+
+      showStatus(`✅ Akun "${name}" (${role === 'admin' ? 'Admin' : 'Petugas'}) berhasil didaftarkan!`, 'ok');
+
+      // Reset form & reload
+      if (adminNewName) adminNewName.value = '';
+      if (adminNewEmail) adminNewEmail.value = '';
+      if (adminNewPass) adminNewPass.value = '123';
+      if (adminNewRole) adminNewRole.value = 'petugas';
+      
+      renderAdminUserList();
     } catch (err) {
-      console.warn('Backend user create notice:', err);
-    }
-
-    // Save to local cache
-    cachedAdminUsers.push(newUserObj);
-    try {
-      localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
-    } catch (e) {}
-
-    // Push to Firebase Firestore if connected
-    if (db && isFirebaseConfigured()) {
-      try {
-        const docId = String(newUserObj.id || email).replace(/[^a-zA-Z0-9_-]/g, '_');
-        await db.collection('users').doc(docId).set({
-          id: newUserObj.id,
-          name: newUserObj.name,
-          email: newUserObj.email,
-          role: newUserObj.role,
-          createdAt: new Date().toISOString()
-        }, { merge: true });
-      } catch (fbErr) {
-        console.warn('Firestore user save warning:', fbErr);
+      console.error('Error in user creation flow:', err);
+      showStatus('Terjadi kendala saat menyimpan akun.', 'err');
+    } finally {
+      if (btnAdminSaveUser) {
+        btnAdminSaveUser.disabled = false;
+        btnAdminSaveUser.textContent = '💾 Daftarkan Akun Baru';
       }
-    }
-
-    showStatus(`✅ Akun "${name}" (${role === 'admin' ? 'Admin' : 'Petugas'}) berhasil didaftarkan!`, 'ok');
-
-    // Reset form & reload
-    if (adminNewName) adminNewName.value = '';
-    if (adminNewEmail) adminNewEmail.value = '';
-    if (adminNewPass) adminNewPass.value = '123';
-    if (adminNewRole) adminNewRole.value = 'petugas';
-    
-    renderAdminUserList();
-
-    if (btnAdminSaveUser) {
-      btnAdminSaveUser.disabled = false;
-      btnAdminSaveUser.textContent = '💾 Daftarkan Akun Baru';
     }
   });
 }
@@ -1136,7 +1177,13 @@ window.handleDeleteUser = async function(userId, userName) {
   if (!isConfirmed) return;
 
   try {
-    await fetch(`/api/users/${encodeURIComponent(userId)}`, { method: 'DELETE' }).catch(() => {});
+    const fetchController = new AbortController();
+    const timeoutId = setTimeout(() => fetchController.abort(), 3000);
+    await fetch(`/api/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+      signal: fetchController.signal
+    }).catch(() => {});
+    clearTimeout(timeoutId);
   } catch (err) {}
 
   // Delete from local cache
@@ -1145,11 +1192,15 @@ window.handleDeleteUser = async function(userId, userName) {
     localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
   } catch (e) {}
 
-  // Delete from Firestore if active
+  // Delete from Firestore if active (with short timeout)
   if (db && isFirebaseConfigured()) {
     try {
       const docId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
-      await db.collection('users').doc(docId).delete();
+      const delPromise = db.collection('users').doc(docId).delete();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Firestore timeout')), 3000)
+      );
+      await Promise.race([delPromise, timeoutPromise]);
     } catch (e) {}
   }
 
@@ -1185,7 +1236,11 @@ if (btnSyncUsersToFirebase) {
       // 1. Gather users from Backend safely
       let usersToSync = [];
       try {
-        const res = await fetch('/api/users');
+        const fetchController = new AbortController();
+        const timeoutId = setTimeout(() => fetchController.abort(), 3000);
+        const res = await fetch('/api/users', { signal: fetchController.signal });
+        clearTimeout(timeoutId);
+
         const contentType = res.headers.get('content-type') || '';
         if (res.ok && contentType.includes('application/json')) {
           const data = await res.json();
@@ -1194,7 +1249,7 @@ if (btnSyncUsersToFirebase) {
           }
         }
       } catch (fetchErr) {
-        console.warn('Backend fetch bypassed during sync:', fetchErr);
+        console.warn('Backend fetch notice during sync:', fetchErr);
       }
 
       // 2. Fallback to cached memory / local storage
@@ -1210,7 +1265,7 @@ if (btnSyncUsersToFirebase) {
         usersToSync = getDefaultUsersList();
       }
 
-      // 3. Write each user to Firestore 'users' collection
+      // 3. Write each user to Firestore 'users' collection with strict timeout
       let syncedCount = 0;
       const batch = db.batch();
       for (const u of usersToSync) {
@@ -1226,7 +1281,13 @@ if (btnSyncUsersToFirebase) {
         }, { merge: true });
         syncedCount++;
       }
-      await batch.commit();
+
+      const commitPromise = batch.commit();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Koneksi Firestore Timeout (Periksa Rules di Firebase Console)')), 4000)
+      );
+
+      await Promise.race([commitPromise, timeoutPromise]);
 
       // 4. Update cached memory and local storage
       cachedAdminUsers = usersToSync;
@@ -1237,11 +1298,18 @@ if (btnSyncUsersToFirebase) {
 
       showStatus(`✨ Berhasil menyinkronkan ${syncedCount} akun ke Firebase Firestore! ✅`, 'ok');
     } catch (e) {
-      console.error('Firebase sync error:', e);
-      showStatus('Gagal menyinkronkan akun ke Firebase: ' + (e.message || 'Terjadi kesalahan jaringan'), 'err');
+      console.warn('Firebase sync notice:', e);
+      const errMsg = String(e.message || '');
+      if (errMsg.includes('Timeout') || errMsg.includes('permission') || errMsg.includes('PERMISSION_DENIED')) {
+        showStatus('⚠️ Firestore di Firebase Console belum aktif / Rules ditolak. Buka "📖 Tutorial Wajib" di atas untuk solusinya.', 'err');
+      } else {
+        showStatus('Gagal menyinkronkan akun: ' + errMsg, 'err');
+      }
     } finally {
-      btnSyncUsersToFirebase.disabled = false;
-      btnSyncUsersToFirebase.textContent = '🔄 Sinkronkan Akun ke Firebase Firestore';
+      if (btnSyncUsersToFirebase) {
+        btnSyncUsersToFirebase.disabled = false;
+        btnSyncUsersToFirebase.textContent = '🔄 Sinkronkan Akun ke Firebase Firestore';
+      }
     }
   });
 }
