@@ -500,12 +500,26 @@ app.post('/api/gdrive/config', (req, res) => {
 });
 
 app.post('/api/gdrive/sync', async (req, res) => {
-  const targetUrl = (req.body.googleScriptUrl || APP_SETTINGS.googleScriptUrl || '').trim();
+  let targetUrl = (req.body.googleScriptUrl || APP_SETTINGS.googleScriptUrl || '').trim();
+  
   if (!targetUrl) {
     return res.status(400).json({
       success: false,
-      message: 'URL Google Apps Script belum diatur.'
+      message: 'URL Google Apps Script belum diatur. Silakan masukkan Web App URL di formulir.'
     });
+  }
+
+  // 1. Check if user pasted a Google Sheets document link instead of Apps Script Web App URL
+  if (targetUrl.includes('docs.google.com/spreadsheets')) {
+    return res.status(400).json({
+      success: false,
+      message: 'URL yang Anda masukkan adalah link Spreadsheet (docs.google.com). Anda harus memasukkan Web App URL yang didapat dari menu: Extensions > Apps Script > Deploy > New Deployment > Web App (berakhiran /exec).'
+    });
+  }
+
+  // 2. Auto-fix /edit to /exec if user accidentally copied editor URL
+  if (targetUrl.includes('/edit')) {
+    targetUrl = targetUrl.replace(/\/edit(\?.*)?$/, '/exec$1');
   }
 
   const payload = req.body.payload || req.body;
@@ -514,13 +528,22 @@ app.post('/api/gdrive/sync', async (req, res) => {
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
+        'Content-Type': 'text/plain;charset=utf-8', // Prevents CORS preflight and works reliably with Google Apps Script
       },
       body: JSON.stringify(payload),
       redirect: 'follow'
     });
 
     const text = await response.text();
+
+    // 3. Detect if Google returned a Sign-in / Access Denied HTML page
+    if (text.includes('accounts.google.com') || text.includes('Sign in - Google Accounts') || text.includes('serviceLogin') || (text.includes('<!DOCTYPE html>') && text.includes('Google'))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Akses Ditolak Google: Pengaturan "Who has access" di Google Apps Script belum diset ke "Anyone" (Siapa saja). Silakan buka Google Apps Script > Deploy > Manage deployments > Edit (ikon pensil) > ganti "Who has access" ke "Anyone" > Deploy ulang.'
+      });
+    }
+
     let result = {};
     try {
       result = JSON.parse(text);
@@ -528,16 +551,17 @@ app.post('/api/gdrive/sync', async (req, res) => {
       result = { raw: text };
     }
 
-    if (response.ok && (result.success !== false)) {
+    if (response.ok && (result.success !== false) && !result.error) {
       return res.json({
         success: true,
         message: result.message || 'Sinkronisasi ke Google Sheets & Drive berhasil.',
         data: result
       });
     } else {
+      const errMsg = result.error || result.message || text.slice(0, 300) || 'Google Apps Script mengembalikan status gagal.';
       return res.status(500).json({
         success: false,
-        message: result.error || result.message || 'Google Apps Script mengembalikan status gagal.',
+        message: errMsg,
         details: text
       });
     }

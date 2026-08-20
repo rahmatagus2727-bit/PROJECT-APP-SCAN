@@ -360,10 +360,12 @@
       </div>
 
       <!-- Setup Form -->
+      <div id="gdriveAlertBox" class="hidden" style="margin-bottom: 14px; padding: 12px 14px; border-radius: var(--radius-sm); font-size: 0.84rem; line-height: 1.5;"></div>
+
       <div class="form-group" style="margin-bottom: 12px;">
         <label for="inputGoogleScriptUrl">URL Web App Google Apps Script</label>
         <input type="url" id="inputGoogleScriptUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" />
-        <span class="hint">Dapatkan URL ini dari menu Google Sheets &gt; Extensions &gt; Apps Script &gt; Deploy as Web App.</span>
+        <span class="hint">⚠️ Pastikan URL berakhiran <b>/exec</b> (bukan /edit dan bukan link file spreadsheet).</span>
       </div>
 
       <div class="form-group" style="margin-bottom: 16px;">
@@ -406,15 +408,35 @@
  * Pasang di: Google Sheets > Extensions > Apps Script
  * Lalu Deploy: Deploy > New deployment > Select type: Web App
  * - Execute as: Me (email Anda)
- * - Who has access: Anyone
+ * - Who has access: Anyone (Wajib pilih "Anyone" agar bisa dihubungi aplikasi)
  */
 
 function doPost(e) {
   try {
-    var rawData = e.postData.contents;
-    var payload = JSON.parse(rawData);
+    var rawData = "";
+    if (e && e.postData && e.postData.contents) {
+      rawData = e.postData.contents;
+    } else if (e && e.parameter && e.parameter.data) {
+      rawData = e.parameter.data;
+    }
+    
+    var payload = {};
+    if (rawData) {
+      try {
+        payload = JSON.parse(rawData);
+      } catch(err) {
+        payload = { raw: rawData };
+      }
+    }
     
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        error: "Spreadsheet tidak aktif. Buat script ini langsung dari Extensions > Apps Script di Google Sheets."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var sheet = ss.getSheetByName("Inspeksi APAR");
     if (!sheet) {
       sheet = ss.insertSheet("Inspeksi APAR");
@@ -462,16 +484,17 @@ function doPost(e) {
     var insertedCount = 0;
     
     items.forEach(function(item) {
+      if (!item || typeof item !== 'object') return;
       var photoUrl = "-";
       
       // Simpan foto Base64 ke Google Drive
-      if (item.foto && item.foto.indexOf("data:image") === 0) {
+      if (item.foto && typeof item.foto === 'string' && item.foto.indexOf("data:image") === 0) {
         try {
           var parts = item.foto.split(",");
           var contentType = parts[0].split(":")[1].split(";")[0];
           var base64Data = parts[1];
           var decoded = Utilities.base64Decode(base64Data);
-          var fileName = "APAR_" + (item.kode || "UNKNOWN") + "_" + Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyyMMdd_HHmmss") + ".jpg";
+          var fileName = "APAR_" + (item.kode || item.id || "UNKNOWN") + "_" + Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyyMMdd_HHmmss") + ".jpg";
           var blob = Utilities.newBlob(decoded, contentType, fileName);
           var file = folder.createFile(blob);
           file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
@@ -479,13 +502,13 @@ function doPost(e) {
         } catch (imgErr) {
           photoUrl = "Error foto: " + imgErr.toString();
         }
-      } else if (item.foto && item.foto.indexOf("http") === 0) {
+      } else if (item.foto && typeof item.foto === 'string' && item.foto.indexOf("http") === 0) {
         photoUrl = item.foto;
       }
       
       var rowData = [
         new Date(),
-        item.tgl || Utilities.formatDate(new Date(), "Asia/Jakarta", "dd/MM/yyyy HH:mm"),
+        item.tgl || item.tanggal || Utilities.formatDate(new Date(), "Asia/Jakarta", "dd/MM/yyyy HH:mm"),
         item.pemeriksa || "-",
         item.kode || item.id || "-",
         item.ruangan || "-",
@@ -527,6 +550,7 @@ function doPost(e) {
 
 function doGet(e) {
   return ContentService.createTextOutput(JSON.stringify({
+    success: true,
     status: "active",
     message: "Webhook Google Apps Script APAR siap menerima data."
   })).setMimeType(ContentService.MimeType.JSON);
@@ -536,8 +560,8 @@ function doGet(e) {
           <ol start="4" style="padding-left: 18px; margin: 8px 0; line-height: 1.6;">
             <li>Klik tombol biru <b>Deploy</b> (kanan atas) &gt; <b>New deployment</b>.</li>
             <li>Pilih ikon roda gigi (⚙️) &gt; pilih <b>Web app</b>.</li>
-            <li>Pada <i>Who has access</i>, pilih <b>Anyone</b> (Siapa saja).</li>
-            <li>Klik <b>Deploy</b> &gt; Berikan izin akses (Authorize access) &gt; Salin <b>Web App URL</b> yang muncul.</li>
+            <li>Pada bagian <i>Who has access</i>, <b>WAJIB pilih "Anyone" (Siapa saja)</b>.</li>
+            <li>Klik <b>Deploy</b> &gt; Setujui izin (Authorize access) &gt; Salin <b>Web App URL</b> yang berakhiran <code>/exec</code>.</li>
             <li>Tempel URL tersebut ke kolom di atas dan klik <b>Simpan Pengaturan</b>. Selesai! 🎉</li>
           </ol>
         </div>
@@ -1992,8 +2016,35 @@ const btnSyncAllToGdrive = document.getElementById('btnSyncAllToGdrive');
 const btnCopyScriptCode = document.getElementById('btnCopyScriptCode');
 const scriptCodeBlock = document.getElementById('scriptCodeBlock');
 
+const gdriveAlertBox = document.getElementById('gdriveAlertBox');
+
+function setGdriveAlert(msg, type = 'info') {
+  if (!gdriveAlertBox) return;
+  if (!msg) {
+    gdriveAlertBox.className = 'hidden';
+    gdriveAlertBox.innerHTML = '';
+    return;
+  }
+  gdriveAlertBox.classList.remove('hidden');
+  if (type === 'err') {
+    gdriveAlertBox.style.background = 'rgba(239, 68, 68, 0.15)';
+    gdriveAlertBox.style.border = '1px solid #ef4444';
+    gdriveAlertBox.style.color = '#f87171';
+  } else if (type === 'ok') {
+    gdriveAlertBox.style.background = 'rgba(16, 185, 129, 0.15)';
+    gdriveAlertBox.style.border = '1px solid #10b981';
+    gdriveAlertBox.style.color = '#34d399';
+  } else {
+    gdriveAlertBox.style.background = 'rgba(59, 130, 246, 0.15)';
+    gdriveAlertBox.style.border = '1px solid #3b82f6';
+    gdriveAlertBox.style.color = '#60a5fa';
+  }
+  gdriveAlertBox.innerHTML = msg;
+}
+
 function openGdriveModal() {
   if (gdriveModal) gdriveModal.classList.remove('hidden');
+  setGdriveAlert('');
 }
 
 function closeGdriveModal() {
@@ -2042,8 +2093,18 @@ async function loadGdriveSettings() {
 
 if (btnSaveGdriveConfig) {
   btnSaveGdriveConfig.addEventListener('click', async () => {
-    const url = (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : '');
+    let url = (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : '');
     const autoSync = checkAutoSyncGdrive ? checkAutoSyncGdrive.checked : true;
+
+    if (url.includes('docs.google.com/spreadsheets')) {
+      setGdriveAlert(`❌ <b>URL Salah:</b> Anda memasukkan link Google Sheets Spreadsheet. <br>Yang dibutuhkan adalah <b>Web App URL</b> yang berakhiran <code>/exec</code> dari menu <i>Extensions &gt; Apps Script &gt; Deploy &gt; Web App</i>.`, 'err');
+      return;
+    }
+
+    if (url.includes('/edit')) {
+      url = url.replace(/\/edit(\?.*)?$/, '/exec$1');
+      if (inputGoogleScriptUrl) inputGoogleScriptUrl.value = url;
+    }
 
     btnSaveGdriveConfig.disabled = true;
     btnSaveGdriveConfig.textContent = 'Menyimpan...';
@@ -2058,12 +2119,13 @@ if (btnSaveGdriveConfig) {
       if (data.success) {
         GDRIVE_SETTINGS = { googleScriptUrl: url, autoSyncGdrive: autoSync };
         updateGdriveStatusUI();
+        setGdriveAlert('✅ <b>Pengaturan Berhasil Disimpan!</b> Silakan klik tombol <b>🧪 Uji Koneksi</b> di sebelah untuk mengetes.', 'ok');
         showStatus('Pengaturan Google Sheets & Drive berhasil disimpan! ✅', 'ok');
       } else {
-        showStatus('Gagal menyimpan: ' + (data.message || 'Error server'), 'err');
+        setGdriveAlert('❌ Gagal menyimpan: ' + (data.message || 'Error server'), 'err');
       }
     } catch (e) {
-      showStatus('Gagal menyimpan konfigurasi: ' + e.message, 'err');
+      setGdriveAlert('❌ Gagal menyimpan konfigurasi: ' + e.message, 'err');
     } finally {
       btnSaveGdriveConfig.disabled = false;
       btnSaveGdriveConfig.textContent = '💾 Simpan Pengaturan';
@@ -2094,16 +2156,26 @@ async function syncSingleToGoogleSheets(entry) {
 
 if (btnTestGdriveSync) {
   btnTestGdriveSync.addEventListener('click', async () => {
-    const url = (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : GDRIVE_SETTINGS.googleScriptUrl);
+    let url = (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : GDRIVE_SETTINGS.googleScriptUrl);
     if (!url) {
-      showStatus('Masukkan URL Google Apps Script terlebih dahulu.', 'err');
+      setGdriveAlert('⚠️ Silakan masukkan URL Web App Google Apps Script Anda terlebih dahulu.', 'err');
       if (inputGoogleScriptUrl) inputGoogleScriptUrl.focus();
       return;
     }
 
+    if (url.includes('docs.google.com/spreadsheets')) {
+      setGdriveAlert(`❌ <b>URL Salah:</b> Anda memasukkan link Google Sheets Spreadsheet. <br>Yang dibutuhkan adalah <b>Web App URL</b> yang berakhiran <code>/exec</code> dari menu <i>Extensions &gt; Apps Script &gt; Deploy &gt; Web App</i>.`, 'err');
+      return;
+    }
+
+    if (url.includes('/edit')) {
+      url = url.replace(/\/edit(\?.*)?$/, '/exec$1');
+      if (inputGoogleScriptUrl) inputGoogleScriptUrl.value = url;
+    }
+
     btnTestGdriveSync.disabled = true;
     btnTestGdriveSync.textContent = 'Menguji...';
-    showStatus('Mengirim data sampel ke Google Sheets & Drive...', 'info');
+    setGdriveAlert('⏳ Sedang mengirim data tes ke Google Sheets &amp; Google Drive Anda...', 'info');
 
     const sampleItem = {
       kode: 'TEST-APAR-01',
@@ -2137,14 +2209,15 @@ if (btnTestGdriveSync) {
       });
       const data = await res.json();
       if (data.success) {
-        showStatus('🎉 Uji koneksi BERHASIL! 1 baris sampel tersimpan di Google Sheets & Drive.', 'ok');
+        setGdriveAlert(`🎉 <b>Koneksi Berhasil 100%!</b><br>1 baris data tes telah berhasil masuk ke Google Sheets Anda dan folder foto Google Drive siap digunakan.`, 'ok');
         GDRIVE_SETTINGS.googleScriptUrl = url;
         updateGdriveStatusUI();
+        showStatus('🎉 Uji koneksi BERHASIL! 1 baris sampel tersimpan di Google Sheets & Drive.', 'ok');
       } else {
-        showStatus('❌ Uji koneksi gagal: ' + (data.message || 'Periksa URL Web App'), 'err');
+        setGdriveAlert(`❌ <b>Uji Koneksi Gagal:</b> ${data.message || 'Periksa kembali URL Web App dan izin akses Google Apps Script.'}`, 'err');
       }
     } catch (e) {
-      showStatus('❌ Gagal menghubungi Google Apps Script: ' + e.message, 'err');
+      setGdriveAlert(`❌ <b>Gagal Menghubungi Server:</b> ${e.message}`, 'err');
     } finally {
       btnTestGdriveSync.disabled = false;
       btnTestGdriveSync.textContent = '🧪 Uji Koneksi';
@@ -2156,7 +2229,7 @@ if (btnSyncAllToGdrive) {
   btnSyncAllToGdrive.addEventListener('click', async () => {
     const url = GDRIVE_SETTINGS.googleScriptUrl || (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : '');
     if (!url) {
-      showStatus('URL Google Apps Script belum diisi. Masukkan URL lalu simpan.', 'err');
+      setGdriveAlert('⚠️ URL Google Apps Script belum diisi. Masukkan URL lalu simpan.', 'err');
       return;
     }
 
@@ -2169,13 +2242,13 @@ if (btnSyncAllToGdrive) {
     });
 
     if (itemsToSend.length === 0) {
-      showStatus('Belum ada riwayat inspeksi yang tersimpan untuk disinkronkan.', 'info');
+      setGdriveAlert('ℹ️ Belum ada riwayat inspeksi yang tersimpan untuk dikirim.', 'info');
       return;
     }
 
     btnSyncAllToGdrive.disabled = true;
     btnSyncAllToGdrive.textContent = `Mengirim ${itemsToSend.length} data...`;
-    showStatus(`Sedang mengirim ${itemsToSend.length} data inspeksi ke Google Sheets & Drive...`, 'info');
+    setGdriveAlert(`⏳ Sedang mengirim <b>${itemsToSend.length}</b> data riwayat ke Google Sheets...`, 'info');
 
     try {
       const res = await fetch('/api/gdrive/sync', {
@@ -2188,12 +2261,13 @@ if (btnSyncAllToGdrive) {
       });
       const data = await res.json();
       if (data.success) {
+        setGdriveAlert(`🎉 <b>Sinkronisasi Berhasil!</b> Sebanyak <b>${itemsToSend.length} data</b> berhasil masuk ke Google Sheets &amp; Drive.`, 'ok');
         showStatus(`🎉 Berhasil menyinkronkan ${itemsToSend.length} data ke Google Sheets & Drive!`, 'ok');
       } else {
-        showStatus('❌ Sinkronisasi massal gagal: ' + (data.message || 'Error script'), 'err');
+        setGdriveAlert(`❌ <b>Sinkronisasi Gagal:</b> ${data.message || 'Error script'}`, 'err');
       }
     } catch (e) {
-      showStatus('❌ Error sinkronisasi: ' + e.message, 'err');
+      setGdriveAlert(`❌ <b>Error:</b> ${e.message}`, 'err');
     } finally {
       btnSyncAllToGdrive.disabled = false;
       btnSyncAllToGdrive.textContent = '🚀 Kirim Semua Riwayat Saat Ini ke Google Sheets (Sinkronisasi Massal)';
