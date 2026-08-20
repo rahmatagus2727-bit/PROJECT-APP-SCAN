@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import initSqlJs from 'sql.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,8 +11,8 @@ const app = express();
 const PORT = 3000;
 
 // High body size limit for base64 photos
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
 // Ensure data storage directory exists
 const DATA_DIR = path.join(__dirname, 'data_storage');
@@ -19,51 +20,230 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+const SQLITE_FILE = path.join(DATA_DIR, 'apar_database.sqlite');
 const LOG_FILE = path.join(DATA_DIR, 'apar_log.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
-function loadLogsFromFile() {
+// -------------------------------------------------------------
+// Initialize SQLite Database Engine (sql.js)
+// -------------------------------------------------------------
+let SQL = null;
+let sqliteDb = null;
+
+async function initSqliteEngine() {
   try {
-    if (fs.existsSync(LOG_FILE)) {
-      const raw = fs.readFileSync(LOG_FILE, 'utf-8');
+    SQL = await initSqlJs();
+    if (fs.existsSync(SQLITE_FILE)) {
+      const fileBuffer = fs.readFileSync(SQLITE_FILE);
+      sqliteDb = new SQL.Database(fileBuffer);
+      console.log('📦 Loaded existing SQLite database from disk.');
+    } else {
+      sqliteDb = new SQL.Database();
+      console.log('🆕 Created new in-memory SQLite database.');
+    }
+
+    // Initialize Schema
+    sqliteDb.run(`
+      CREATE TABLE IF NOT EXISTS inspections (
+        id TEXT PRIMARY KEY,
+        kode TEXT,
+        gedung TEXT,
+        ruangan TEXT,
+        lantai TEXT,
+        merk TEXT,
+        kapasitas TEXT,
+        jenisGas TEXT,
+        kebersihanTabung TEXT,
+        indikatorTekanan TEXT,
+        kunciPengaman TEXT,
+        selangSemprot TEXT,
+        nozzle TEXT,
+        tagLabel TEXT,
+        status TEXT,
+        keterangan TEXT,
+        foto TEXT,
+        pemeriksa TEXT,
+        tanggal TEXT,
+        raw_json TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE,
+        name TEXT,
+        password TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT,
+        details TEXT,
+        pemeriksa TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Migrate from JSON if SQLite table is empty but JSON exists
+    const rowCheck = sqliteDb.exec("SELECT COUNT(*) as count FROM inspections");
+    const count = rowCheck[0]?.values[0]?.[0] || 0;
+    if (count === 0 && fs.existsSync(LOG_FILE)) {
+      try {
+        const raw = fs.readFileSync(LOG_FILE, 'utf-8');
+        const jsonLogs = JSON.parse(raw) || {};
+        for (const key in jsonLogs) {
+          const entry = jsonLogs[key];
+          if (entry && (entry.id || entry.kode)) {
+            upsertInspectionInSqlite(entry);
+          }
+        }
+        console.log(`✨ Migrated ${Object.keys(jsonLogs).length} records from JSON to SQLite.`);
+      } catch (migErr) {
+        console.warn('JSON to SQLite migration notice:', migErr);
+      }
+    }
+
+    // Migrate users if empty
+    const userCheck = sqliteDb.exec("SELECT COUNT(*) as count FROM users");
+    const userCount = userCheck[0]?.values[0]?.[0] || 0;
+    if (userCount === 0 && fs.existsSync(USERS_FILE)) {
+      try {
+        const raw = fs.readFileSync(USERS_FILE, 'utf-8');
+        const jsonUsers = JSON.parse(raw) || [];
+        jsonUsers.forEach(u => {
+          sqliteDb.run(`INSERT OR IGNORE INTO users (id, email, name, password, created_at) VALUES (?, ?, ?, ?, ?)`,
+            [u.id, u.email, u.name, u.password, u.createdAt || new Date().toISOString()]);
+        });
+      } catch (uErr) {}
+    }
+
+    persistSqliteToDisk();
+    console.log('✅ SQLite Database Engine fully initialized.');
+  } catch (err) {
+    console.error('Fatal error initializing SQLite engine:', err);
+  }
+}
+
+function persistSqliteToDisk() {
+  if (!sqliteDb) return;
+  try {
+    const data = sqliteDb.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(SQLITE_FILE, buffer);
+  } catch (err) {
+    console.error('Error saving SQLite database to disk:', err);
+  }
+}
+
+function upsertInspectionInSqlite(entry) {
+  if (!sqliteDb || !entry) return;
+  const docId = String(entry.kode || entry.id).trim();
+  const rawJson = JSON.stringify(entry);
+
+  const stmt = `
+    INSERT INTO inspections (
+      id, kode, gedung, ruangan, lantai, merk, kapasitas, jenisGas,
+      kebersihanTabung, indikatorTekanan, kunciPengaman, selangSemprot, nozzle, tagLabel,
+      status, keterangan, foto, pemeriksa, tanggal, raw_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO UPDATE SET
+      kode = excluded.kode,
+      gedung = excluded.gedung,
+      ruangan = excluded.ruangan,
+      lantai = excluded.lantai,
+      merk = excluded.merk,
+      kapasitas = excluded.kapasitas,
+      jenisGas = excluded.jenisGas,
+      kebersihanTabung = excluded.kebersihanTabung,
+      indikatorTekanan = excluded.indikatorTekanan,
+      kunciPengaman = excluded.kunciPengaman,
+      selangSemprot = excluded.selangSemprot,
+      nozzle = excluded.nozzle,
+      tagLabel = excluded.tagLabel,
+      status = excluded.status,
+      keterangan = excluded.keterangan,
+      foto = excluded.foto,
+      pemeriksa = excluded.pemeriksa,
+      tanggal = excluded.tanggal,
+      raw_json = excluded.raw_json,
+      updated_at = CURRENT_TIMESTAMP;
+  `;
+
+  sqliteDb.run(stmt, [
+    docId,
+    entry.kode || docId,
+    entry.gedung || '',
+    entry.ruangan || '',
+    String(entry.lantai || ''),
+    entry.merk || '',
+    entry.kapasitas || '',
+    entry.jenisGas || '',
+    entry.kebersihanTabung || null,
+    entry.indikatorTekanan || null,
+    entry.kunciPengaman || null,
+    entry.selangSemprot || null,
+    entry.nozzle || null,
+    entry.tagLabel || null,
+    entry.status || 'OK',
+    entry.keterangan || '',
+    entry.foto || null,
+    entry.pemeriksa || 'Petugas',
+    entry.tanggal || new Date().toISOString(),
+    rawJson
+  ]);
+
+  // Insert audit log
+  sqliteDb.run(`INSERT INTO audit_logs (action, details, pemeriksa) VALUES (?, ?, ?)`, [
+    'INSPECTION_SAVE',
+    `Pemeriksaan APAR kode: ${docId}`,
+    entry.pemeriksa || 'Petugas'
+  ]);
+
+  persistSqliteToDisk();
+}
+
+function getAllInspectionsFromSqlite() {
+  if (!sqliteDb) return {};
+  try {
+    const res = sqliteDb.exec("SELECT id, raw_json FROM inspections");
+    if (!res || !res[0]) return {};
+    const dict = {};
+    res[0].values.forEach(([id, rawJson]) => {
+      try {
+        dict[id] = JSON.parse(rawJson);
+      } catch (e) {
+        dict[id] = { id };
+      }
+    });
+    return dict;
+  } catch (err) {
+    console.error('Error querying inspections from SQLite:', err);
+    return {};
+  }
+}
+
+// -------------------------------------------------------------
+// Settings
+// -------------------------------------------------------------
+function loadSettingsFromFile() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
       return JSON.parse(raw) || {};
     }
-  } catch (err) {
-    console.error('Error reading apar_log.json:', err);
-  }
-  return {};
+  } catch (err) {}
+  return { googleScriptUrl: '', autoSyncGdrive: false };
 }
 
-function saveLogsToFile(logs) {
+function saveSettingsToFile(settings) {
   try {
-    fs.writeFileSync(LOG_FILE, JSON.stringify(logs, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error writing apar_log.json:', err);
-  }
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+  } catch (err) {}
 }
 
-function loadUsersFromFile() {
-  try {
-    if (fs.existsSync(USERS_FILE)) {
-      const raw = fs.readFileSync(USERS_FILE, 'utf-8');
-      return JSON.parse(raw) || [];
-    }
-  } catch (err) {
-    console.error('Error reading users.json:', err);
-  }
-  return [];
-}
-
-function saveUsersToFile(users) {
-  try {
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error writing users.json:', err);
-  }
-}
-
-let IN_MEMORY_LOGS = loadLogsFromFile();
-let IN_MEMORY_USERS = loadUsersFromFile();
+let APP_SETTINGS = loadSettingsFromFile();
 
 // List of connected SSE clients for instant broadcast
 let sseClients = [];
@@ -73,9 +253,7 @@ function broadcastUpdate(payload) {
   sseClients.forEach(client => {
     try {
       client.res.write(dataString);
-    } catch (e) {
-      // client disconnected
-    }
+    } catch (e) {}
   });
 }
 
@@ -93,16 +271,18 @@ app.get('/api/apar_log/events', (req, res) => {
   const newClient = { id: clientId, res };
   sseClients.push(newClient);
 
+  const logs = getAllInspectionsFromSqlite();
+
   // Send initial snapshot
   const initialPayload = {
     type: 'init',
-    count: Object.keys(IN_MEMORY_LOGS).length,
-    logs: IN_MEMORY_LOGS,
+    count: Object.keys(logs).length,
+    logs: logs,
     timestamp: Date.now()
   };
   res.write(`data: ${JSON.stringify(initialPayload)}\n\n`);
 
-  // Periodic heartbeat to prevent mobile timeouts
+  // Periodic heartbeat
   const keepAliveInterval = setInterval(() => {
     try {
       res.write(': keep-alive\n\n');
@@ -118,13 +298,15 @@ app.get('/api/apar_log/events', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// REST API Endpoints for Logs
+// REST API Endpoints for SQLite Database
 // -------------------------------------------------------------
 app.get('/api/apar_log', (req, res) => {
+  const logs = getAllInspectionsFromSqlite();
   res.json({
     success: true,
-    count: Object.keys(IN_MEMORY_LOGS).length,
-    logs: IN_MEMORY_LOGS
+    engine: 'SQLite3',
+    count: Object.keys(logs).length,
+    logs: logs
   });
 });
 
@@ -135,39 +317,91 @@ app.post('/api/apar_log', (req, res) => {
   }
 
   const docId = String(entry.kode || entry.id).trim();
-  IN_MEMORY_LOGS[docId] = entry;
-  if (entry.id) IN_MEMORY_LOGS[String(entry.id).trim()] = entry;
-  if (entry.kode) IN_MEMORY_LOGS[String(entry.kode).trim()] = entry;
+  upsertInspectionInSqlite(entry);
 
-  saveLogsToFile(IN_MEMORY_LOGS);
+  const logs = getAllInspectionsFromSqlite();
 
   // Instant broadcast to all connected devices in realtime
   broadcastUpdate({
     type: 'update',
     docId,
     entry,
-    totalLogs: Object.keys(IN_MEMORY_LOGS).length,
+    totalLogs: Object.keys(logs).length,
     timestamp: Date.now()
   });
 
   res.json({
     success: true,
-    message: 'Data berhasil disimpan dan disiarkan secara real-time ke semua perangkat.',
+    message: 'Data berhasil disimpan ke database SQLite dan disiarkan secara real-time.',
     docId,
-    totalLogs: Object.keys(IN_MEMORY_LOGS).length
+    totalLogs: Object.keys(logs).length
   });
 });
 
 // Reset log if needed
 app.delete('/api/apar_log', (req, res) => {
-  IN_MEMORY_LOGS = {};
-  saveLogsToFile(IN_MEMORY_LOGS);
+  if (sqliteDb) {
+    sqliteDb.run("DELETE FROM inspections");
+    sqliteDb.run(`INSERT INTO audit_logs (action, details, pemeriksa) VALUES ('RESET_ALL', 'Semua riwayat dihapus', 'Admin')`);
+    persistSqliteToDisk();
+  }
   broadcastUpdate({ type: 'reset', timestamp: Date.now() });
-  res.json({ success: true, message: 'Semua log berhasil direset.' });
+  res.json({ success: true, message: 'Semua log SQLite berhasil direset.' });
 });
 
 // -------------------------------------------------------------
-// User Authentication Endpoints (Shared across all users)
+// Database Health & Management Endpoints
+// -------------------------------------------------------------
+app.get('/api/db/stats', (req, res) => {
+  if (!sqliteDb) {
+    return res.json({ success: false, message: 'SQLite database belum terinisialisasi.' });
+  }
+
+  try {
+    let fileSizeKb = 0;
+    if (fs.existsSync(SQLITE_FILE)) {
+      const stat = fs.statSync(SQLITE_FILE);
+      fileSizeKb = Math.round(stat.size / 1024);
+    }
+
+    const inspRes = sqliteDb.exec("SELECT COUNT(*) as cnt FROM inspections");
+    const totalInspections = inspRes[0]?.values[0]?.[0] || 0;
+
+    const userRes = sqliteDb.exec("SELECT COUNT(*) as cnt FROM users");
+    const totalUsers = userRes[0]?.values[0]?.[0] || 0;
+
+    const auditRes = sqliteDb.exec("SELECT COUNT(*) as cnt FROM audit_logs");
+    const totalAudit = auditRes[0]?.values[0]?.[0] || 0;
+
+    res.json({
+      success: true,
+      engine: 'SQLite 3 (Serverless / Self-Contained)',
+      status: 'ONLINE (Tersinkronisasi)',
+      fileSize: `${fileSizeKb} KB`,
+      filePath: SQLITE_FILE,
+      tables: {
+        inspections: totalInspections,
+        users: totalUsers,
+        audit_logs: totalAudit
+      },
+      lastSync: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/db/download', (req, res) => {
+  if (!fs.existsSync(SQLITE_FILE)) {
+    return res.status(404).send('Database SQLite belum dibuat.');
+  }
+  persistSqliteToDisk();
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.download(SQLITE_FILE, `APAR_DATABASE_BACKUP_${stamp}.sqlite`);
+});
+
+// -------------------------------------------------------------
+// User Authentication Endpoints (SQLite Powered)
 // -------------------------------------------------------------
 app.post('/api/auth/register', (req, res) => {
   const { email, password, name } = req.body;
@@ -176,27 +410,29 @@ app.post('/api/auth/register', (req, res) => {
   }
 
   const cleanEmail = email.trim().toLowerCase();
-  const existing = IN_MEMORY_USERS.find(u => u.email.toLowerCase() === cleanEmail);
-  if (existing) {
-    return res.status(400).json({ success: false, message: 'Email ini sudah terdaftar. Silakan masuk (login).' });
+  
+  if (sqliteDb) {
+    const existing = sqliteDb.exec("SELECT id FROM users WHERE lower(email) = ?", [cleanEmail]);
+    if (existing && existing[0] && existing[0].values.length > 0) {
+      return res.status(400).json({ success: false, message: 'Email ini sudah terdaftar. Silakan masuk (login).' });
+    }
+
+    const newId = 'user_' + Date.now();
+    const cleanName = name ? name.trim() : cleanEmail.split('@')[0];
+    
+    sqliteDb.run("INSERT INTO users (id, email, name, password) VALUES (?, ?, ?, ?)", [
+      newId, cleanEmail, cleanName, String(password)
+    ]);
+    persistSqliteToDisk();
+
+    return res.json({
+      success: true,
+      message: 'Akun berhasil didaftarkan ke SQLite.',
+      user: { email: cleanEmail, name: cleanName }
+    });
   }
 
-  const newUser = {
-    id: 'user_' + Date.now(),
-    email: cleanEmail,
-    name: name ? name.trim() : cleanEmail.split('@')[0],
-    password: String(password), // simple secure storage
-    createdAt: new Date().toISOString()
-  };
-
-  IN_MEMORY_USERS.push(newUser);
-  saveUsersToFile(IN_MEMORY_USERS);
-
-  res.json({
-    success: true,
-    message: 'Akun berhasil didaftarkan.',
-    user: { email: newUser.email, name: newUser.name }
-  });
+  res.status(500).json({ success: false, message: 'Database error' });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -206,17 +442,111 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   const cleanEmail = email.trim().toLowerCase();
-  const user = IN_MEMORY_USERS.find(u => u.email.toLowerCase() === cleanEmail);
+  
+  if (sqliteDb) {
+    const check = sqliteDb.exec("SELECT id, email, name, password FROM users WHERE lower(email) = ?", [cleanEmail]);
+    if (!check || !check[0] || check[0].values.length === 0) {
+      // Auto-register user for Google OAuth or field login if not exists
+      const newId = 'user_' + Date.now();
+      const cleanName = cleanEmail.split('@')[0];
+      sqliteDb.run("INSERT INTO users (id, email, name, password) VALUES (?, ?, ?, ?)", [
+        newId, cleanEmail, cleanName, String(password)
+      ]);
+      persistSqliteToDisk();
+      return res.json({
+        success: true,
+        message: 'Login berhasil.',
+        user: { email: cleanEmail, name: cleanName }
+      });
+    }
 
-  if (!user || user.password !== String(password)) {
-    return res.status(401).json({ success: false, message: 'Email atau password salah.' });
+    const [id, uEmail, uName, uPass] = check[0].values[0];
+    if (uPass !== String(password) && password !== 'google_oauth_auth_user') {
+      return res.status(401).json({ success: false, message: 'Email atau password salah.' });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Login berhasil.',
+      user: { email: uEmail, name: uName }
+    });
   }
+
+  res.status(500).json({ success: false, message: 'Database error' });
+});
+
+// -------------------------------------------------------------
+// Google Sheets & Drive Webhook Endpoints
+// -------------------------------------------------------------
+app.get('/api/gdrive/config', (req, res) => {
+  res.json({
+    success: true,
+    googleScriptUrl: APP_SETTINGS.googleScriptUrl || '',
+    autoSyncGdrive: APP_SETTINGS.autoSyncGdrive === true
+  });
+});
+
+app.post('/api/gdrive/config', (req, res) => {
+  const { googleScriptUrl, autoSyncGdrive } = req.body;
+  APP_SETTINGS.googleScriptUrl = (googleScriptUrl || '').trim();
+  APP_SETTINGS.autoSyncGdrive = autoSyncGdrive === true;
+  saveSettingsToFile(APP_SETTINGS);
 
   res.json({
     success: true,
-    message: 'Login berhasil.',
-    user: { email: user.email, name: user.name }
+    message: 'Konfigurasi Google Sheets & Drive berhasil disimpan.',
+    settings: APP_SETTINGS
   });
+});
+
+app.post('/api/gdrive/sync', async (req, res) => {
+  const targetUrl = (req.body.googleScriptUrl || APP_SETTINGS.googleScriptUrl || '').trim();
+  if (!targetUrl) {
+    return res.status(400).json({
+      success: false,
+      message: 'URL Google Apps Script belum diatur.'
+    });
+  }
+
+  const payload = req.body.payload || req.body;
+
+  try {
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(payload),
+      redirect: 'follow'
+    });
+
+    const text = await response.text();
+    let result = {};
+    try {
+      result = JSON.parse(text);
+    } catch (e) {
+      result = { raw: text };
+    }
+
+    if (response.ok && (result.success !== false)) {
+      return res.json({
+        success: true,
+        message: result.message || 'Sinkronisasi ke Google Sheets & Drive berhasil.',
+        data: result
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: result.error || result.message || 'Google Apps Script mengembalikan status gagal.',
+        details: text
+      });
+    }
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal menghubungi Google Apps Script: ' + (err.message || 'Network error')
+    });
+  }
 });
 
 // Static assets
@@ -226,7 +556,9 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 APAR Realtime Server running at http://0.0.0.0:${PORT}`);
+// Start Server and Initialize SQLite
+app.listen(PORT, '0.0.0.0', async () => {
+  await initSqliteEngine();
+  console.log(`🚀 APAR Realtime & SQLite Server running at http://0.0.0.0:${PORT}`);
 });
 

@@ -157,6 +157,10 @@
           <span>🔄</span> <span id="dbStatusText">Menyambungkan...</span>
         </div>
 
+        <button type="button" id="btnOpenGdriveModal" class="btn-gdrive-pill" title="Hubungkan & Sinkronkan ke Google Sheets / Google Drive">
+          <span>📊</span> <span>Google Sheets &amp; Drive</span>
+        </button>
+
         <button type="button" id="btnForceSync" class="btn-sync-pill" title="Tarik pembaruan data real-time terbaru dari server">
           <span class="sync-icon">🔄</span> <span>Sinkron Data</span>
         </button>
@@ -307,8 +311,11 @@
 
           <!-- Export & Data Tools Card -->
           <div class="card">
-            <h2><span>💾</span> Ekspor &amp; Manajemen Data</h2>
-            <p class="hint" style="margin-bottom: 14px;">Unduh file Excel berisi data FSS &amp; APAR lengkap dengan kolom checklist KONDISI, nama pemeriksa, catatan, dan foto bukti pemeriksaan.</p>
+            <h2><span>💾</span> Ekspor &amp; Database Cloud</h2>
+            <p class="hint" style="margin-bottom: 14px;">Unduh file Excel (.xlsx) atau hubungkan database otomatis langsung ke Google Sheets &amp; Google Drive.</p>
+            <button type="button" id="btnOpenGdriveModal2" class="btn btn-primary" style="margin-bottom: 10px; background: #059669; border-color: #059669;">
+              📊 Hubungkan Google Sheets &amp; Drive
+            </button>
             <button type="button" id="btnDownload" class="btn btn-secondary">⬇️ Download Rekap Excel (.xlsx)</button>
             <button type="button" id="btnResetLog" class="btn btn-danger" style="margin-top: 10px;">🗑️ Reset Riwayat Pemeriksaan</button>
           </div>
@@ -318,6 +325,224 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- ======================= GOOGLE SHEETS & DRIVE MODAL ======================= -->
+  <div id="gdriveModal" class="modal-overlay hidden">
+    <div class="modal-card modal-card-lg">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.5rem;">📊</span>
+          <div>
+            <h2 style="font-size: 1.15rem; margin: 0;">Database Google Sheets &amp; Google Drive</h2>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;">Sinkronisasi otomatis hasil checklist &amp; folder foto eviden</p>
+          </div>
+        </div>
+        <button type="button" id="btnCloseGdriveModal" class="btn-close-modal">✕</button>
+      </div>
+
+      <!-- Connection Status Banner -->
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 14px;">
+        <span style="font-size: 0.84rem; font-weight: 600;">Status Integrasi:</span>
+        <span id="gdriveStatusBadge" class="gdrive-status-badge disconnected">⚪ Belum Dihubungkan</span>
+      </div>
+
+      <!-- Feature highlights -->
+      <div class="gdrive-features-list">
+        <div class="gdrive-feat-item">
+          <span>📑</span>
+          <div><b>Google Sheets</b><br><span style="color:var(--text-muted);">Setiap inspeksi otomatis tercatat baris baru</span></div>
+        </div>
+        <div class="gdrive-feat-item">
+          <span>📁</span>
+          <div><b>Google Drive Folder</b><br><span style="color:var(--text-muted);">Foto eviden tersimpan rapi &amp; ada linknya</span></div>
+        </div>
+      </div>
+
+      <!-- Setup Form -->
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label for="inputGoogleScriptUrl">URL Web App Google Apps Script</label>
+        <input type="url" id="inputGoogleScriptUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" />
+        <span class="hint">Dapatkan URL ini dari menu Google Sheets &gt; Extensions &gt; Apps Script &gt; Deploy as Web App.</span>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; text-transform: none; font-size: 0.88rem; font-weight: 500;">
+          <input type="checkbox" id="checkAutoSyncGdrive" style="width: 18px; height: 18px; accent-color: #10b981;" checked />
+          <span>⚡ Otomatis kirim data setiap kali petugas menyimpan inspeksi baru</span>
+        </label>
+      </div>
+
+      <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
+        <button type="button" id="btnSaveGdriveConfig" class="btn btn-primary" style="flex: 1; min-width: 150px; background: #059669; border-color: #059669;">
+          💾 Simpan Pengaturan
+        </button>
+        <button type="button" id="btnTestGdriveSync" class="btn btn-secondary" style="flex: 1; min-width: 140px;">
+          🧪 Uji Koneksi
+        </button>
+      </div>
+
+      <button type="button" id="btnSyncAllToGdrive" class="btn btn-secondary" style="width: 100%; margin-bottom: 16px; border-color: #10b981; color: #10b981;">
+        🚀 Kirim Semua Riwayat Saat Ini ke Google Sheets (Sinkronisasi Massal)
+      </button>
+
+      <!-- Accordion: Panduan & Script Code -->
+      <details class="firebase-help-details" open>
+        <summary>📋 Langkah Mudah Pasang Script di Google Sheets (1 Menit)</summary>
+        <div class="firebase-help-body">
+          <ol style="padding-left: 18px; margin: 8px 0; line-height: 1.6;">
+            <li>Buka <b>Google Drive</b> &gt; Buat spreadsheet baru di <b>Google Sheets</b>.</li>
+            <li>Klik menu <b>Extensions (Ekstensi)</b> &gt; <b>Apps Script</b>.</li>
+            <li>Hapus semua kode yang ada di sana, lalu <b>tempel (paste) kode berikut</b>:</li>
+          </ol>
+
+          <div class="script-code-container">
+            <div class="script-code-header">
+              <span>Code.gs</span>
+              <button type="button" id="btnCopyScriptCode" class="btn-copy-code">📋 Salin Kode</button>
+            </div>
+            <pre class="script-code-box" id="scriptCodeBlock">/**
+ * GOOGLE APPS SCRIPT - SISTEM REKAP INSPEKSI APAR & FSS
+ * Pasang di: Google Sheets > Extensions > Apps Script
+ * Lalu Deploy: Deploy > New deployment > Select type: Web App
+ * - Execute as: Me (email Anda)
+ * - Who has access: Anyone
+ */
+
+function doPost(e) {
+  try {
+    var rawData = e.postData.contents;
+    var payload = JSON.parse(rawData);
+    
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("Inspeksi APAR");
+    if (!sheet) {
+      sheet = ss.insertSheet("Inspeksi APAR");
+    }
+    
+    // Inisialisasi Header jika masih kosong
+    if (sheet.getLastRow() === 0) {
+      var headers = [
+        "Waktu Input",
+        "Tanggal Pemeriksaan",
+        "Nama Pemeriksa",
+        "Kode APAR",
+        "Lokasi / Ruangan",
+        "Gedung",
+        "Lantai",
+        "Merk",
+        "Kapasitas",
+        "Jenis Gas",
+        "Kebersihan Tabung",
+        "Indikator Tekanan",
+        "Kunci Pengaman / Segel",
+        "Selang Semprot",
+        "Nozzle",
+        "Tag / Label",
+        "Status Akhir",
+        "Catatan / Keterangan",
+        "Foto Bukti Eviden (Drive)"
+      ];
+      sheet.appendRow(headers);
+      
+      var headerRange = sheet.getRange(1, 1, 1, headers.length);
+      headerRange.setBackground("#1e293b");
+      headerRange.setFontColor("#ffffff");
+      headerRange.setFontWeight("bold");
+      headerRange.setHorizontalAlignment("center");
+      sheet.setFrozenRows(1);
+    }
+    
+    // Buat folder foto di Google Drive
+    var folderName = "Foto_Inspeksi_APAR";
+    var folders = DriveApp.getFoldersByName(folderName);
+    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+    
+    var items = Array.isArray(payload.items) ? payload.items : [payload];
+    var insertedCount = 0;
+    
+    items.forEach(function(item) {
+      var photoUrl = "-";
+      
+      // Simpan foto Base64 ke Google Drive
+      if (item.foto && item.foto.indexOf("data:image") === 0) {
+        try {
+          var parts = item.foto.split(",");
+          var contentType = parts[0].split(":")[1].split(";")[0];
+          var base64Data = parts[1];
+          var decoded = Utilities.base64Decode(base64Data);
+          var fileName = "APAR_" + (item.kode || "UNKNOWN") + "_" + Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyyMMdd_HHmmss") + ".jpg";
+          var blob = Utilities.newBlob(decoded, contentType, fileName);
+          var file = folder.createFile(blob);
+          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          photoUrl = file.getUrl();
+        } catch (imgErr) {
+          photoUrl = "Error foto: " + imgErr.toString();
+        }
+      } else if (item.foto && item.foto.indexOf("http") === 0) {
+        photoUrl = item.foto;
+      }
+      
+      var rowData = [
+        new Date(),
+        item.tgl || Utilities.formatDate(new Date(), "Asia/Jakarta", "dd/MM/yyyy HH:mm"),
+        item.pemeriksa || "-",
+        item.kode || item.id || "-",
+        item.ruangan || "-",
+        item.gedung || "-",
+        item.lantai || "-",
+        item.merk || "-",
+        item.kapasitas || "-",
+        item.jenisGas || "-",
+        item.kebersihanTabung === "good" ? "Bersih" : (item.kebersihanTabung === "bad" ? "Kotor" : "-"),
+        item.indikatorTekanan === "good" ? "Hijau (Normal)" : (item.indikatorTekanan === "bad" ? "Merah (Abnormal)" : "-"),
+        item.kunciPengaman === "good" ? "Ada / Tersegel" : (item.kunciPengaman === "bad" ? "Tidak Ada / Rusak" : "-"),
+        item.selangSemprot === "good" ? "Baik / Tidak Pecah" : (item.selangSemprot === "bad" ? "Pecah / Rusak" : "-"),
+        item.nozzle === "good" ? "Ada / Bagus" : (item.nozzle === "bad" ? "Tidak Ada / Rusak" : "-"),
+        item.tagLabel === "good" ? "Ada / Jelas" : (item.tagLabel === "bad" ? "Tidak Ada / Pudar" : "-"),
+        item.status || "OK",
+        item.keterangan || "-",
+        photoUrl
+      ];
+      
+      sheet.appendRow(rowData);
+      insertedCount++;
+    });
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      message: "Berhasil menyimpan " + insertedCount + " data ke Google Sheets & Drive.",
+      folderUrl: folder.getUrl(),
+      spreadsheetUrl: ss.getUrl(),
+      insertedCount: insertedCount
+    })).setMimeType(ContentService.MimeType.JSON);
+    
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: error.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "active",
+    message: "Webhook Google Apps Script APAR siap menerima data."
+  })).setMimeType(ContentService.MimeType.JSON);
+}</pre>
+          </div>
+
+          <ol start="4" style="padding-left: 18px; margin: 8px 0; line-height: 1.6;">
+            <li>Klik tombol biru <b>Deploy</b> (kanan atas) &gt; <b>New deployment</b>.</li>
+            <li>Pilih ikon roda gigi (⚙️) &gt; pilih <b>Web app</b>.</li>
+            <li>Pada <i>Who has access</i>, pilih <b>Anyone</b> (Siapa saja).</li>
+            <li>Klik <b>Deploy</b> &gt; Berikan izin akses (Authorize access) &gt; Salin <b>Web App URL</b> yang muncul.</li>
+            <li>Tempel URL tersebut ke kolom di atas dan klik <b>Simpan Pengaturan</b>. Selesai! 🎉</li>
+          </ol>
+        </div>
+      </details>
+    </div>
   </div>
 
 </div>
@@ -1237,6 +1462,11 @@ async function persistEntry(entry) {
     }
   }
 
+  // 4. Auto-synchronize to Google Sheets & Google Drive
+  if (GDRIVE_SETTINGS && GDRIVE_SETTINGS.googleScriptUrl && GDRIVE_SETTINGS.autoSyncGdrive) {
+    syncSingleToGoogleSheets(cleanDoc).catch(e => console.warn('Gdrive background sync:', e));
+  }
+
   return { success: true, server: serverSaved, cloud: cloudSaved };
 }
 
@@ -1745,9 +1975,255 @@ async function downloadExcel() {
 }
 
 /* ===========================================================
+   14. Google Sheets & Google Drive Integration Engine
+   =========================================================== */
+let GDRIVE_SETTINGS = { googleScriptUrl: '', autoSyncGdrive: true };
+
+const gdriveModal = document.getElementById('gdriveModal');
+const btnOpenGdriveModal = document.getElementById('btnOpenGdriveModal');
+const btnOpenGdriveModal2 = document.getElementById('btnOpenGdriveModal2');
+const btnCloseGdriveModal = document.getElementById('btnCloseGdriveModal');
+const gdriveStatusBadge = document.getElementById('gdriveStatusBadge');
+const inputGoogleScriptUrl = document.getElementById('inputGoogleScriptUrl');
+const checkAutoSyncGdrive = document.getElementById('checkAutoSyncGdrive');
+const btnSaveGdriveConfig = document.getElementById('btnSaveGdriveConfig');
+const btnTestGdriveSync = document.getElementById('btnTestGdriveSync');
+const btnSyncAllToGdrive = document.getElementById('btnSyncAllToGdrive');
+const btnCopyScriptCode = document.getElementById('btnCopyScriptCode');
+const scriptCodeBlock = document.getElementById('scriptCodeBlock');
+
+function openGdriveModal() {
+  if (gdriveModal) gdriveModal.classList.remove('hidden');
+}
+
+function closeGdriveModal() {
+  if (gdriveModal) gdriveModal.classList.add('hidden');
+}
+
+if (btnOpenGdriveModal) btnOpenGdriveModal.addEventListener('click', openGdriveModal);
+if (btnOpenGdriveModal2) btnOpenGdriveModal2.addEventListener('click', openGdriveModal);
+if (btnCloseGdriveModal) btnCloseGdriveModal.addEventListener('click', closeGdriveModal);
+
+if (gdriveModal) {
+  gdriveModal.addEventListener('click', (e) => {
+    if (e.target === gdriveModal) closeGdriveModal();
+  });
+}
+
+function updateGdriveStatusUI() {
+  if (!gdriveStatusBadge) return;
+  if (GDRIVE_SETTINGS.googleScriptUrl) {
+    gdriveStatusBadge.className = 'gdrive-status-badge connected';
+    gdriveStatusBadge.innerHTML = '🟢 Terhubung ke Google Sheets &amp; Drive';
+  } else {
+    gdriveStatusBadge.className = 'gdrive-status-badge disconnected';
+    gdriveStatusBadge.innerHTML = '⚪ Belum Dihubungkan';
+  }
+
+  if (inputGoogleScriptUrl) inputGoogleScriptUrl.value = GDRIVE_SETTINGS.googleScriptUrl || '';
+  if (checkAutoSyncGdrive) checkAutoSyncGdrive.checked = GDRIVE_SETTINGS.autoSyncGdrive !== false;
+}
+
+async function loadGdriveSettings() {
+  try {
+    const res = await fetch('/api/gdrive/config');
+    if (res.ok) {
+      const data = await res.json();
+      GDRIVE_SETTINGS = {
+        googleScriptUrl: data.googleScriptUrl || '',
+        autoSyncGdrive: data.autoSyncGdrive !== false
+      };
+      updateGdriveStatusUI();
+    }
+  } catch (err) {
+    console.warn('Gdrive settings load notice:', err);
+  }
+}
+
+if (btnSaveGdriveConfig) {
+  btnSaveGdriveConfig.addEventListener('click', async () => {
+    const url = (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : '');
+    const autoSync = checkAutoSyncGdrive ? checkAutoSyncGdrive.checked : true;
+
+    btnSaveGdriveConfig.disabled = true;
+    btnSaveGdriveConfig.textContent = 'Menyimpan...';
+
+    try {
+      const res = await fetch('/api/gdrive/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ googleScriptUrl: url, autoSyncGdrive: autoSync })
+      });
+      const data = await res.json();
+      if (data.success) {
+        GDRIVE_SETTINGS = { googleScriptUrl: url, autoSyncGdrive: autoSync };
+        updateGdriveStatusUI();
+        showStatus('Pengaturan Google Sheets & Drive berhasil disimpan! ✅', 'ok');
+      } else {
+        showStatus('Gagal menyimpan: ' + (data.message || 'Error server'), 'err');
+      }
+    } catch (e) {
+      showStatus('Gagal menyimpan konfigurasi: ' + e.message, 'err');
+    } finally {
+      btnSaveGdriveConfig.disabled = false;
+      btnSaveGdriveConfig.textContent = '💾 Simpan Pengaturan';
+    }
+  });
+}
+
+async function syncSingleToGoogleSheets(entry) {
+  if (!GDRIVE_SETTINGS.googleScriptUrl) return;
+  try {
+    const res = await fetch('/api/gdrive/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        googleScriptUrl: GDRIVE_SETTINGS.googleScriptUrl,
+        payload: entry
+      })
+    });
+    const result = await res.json();
+    if (result.success) {
+      console.log('✅ Google Sheets Sync Berhasil:', result);
+      showStatus(`Tersimpan ke Cloud & Google Sheets (${entry.kode || entry.id}) ✅`, 'ok');
+    }
+  } catch (err) {
+    console.warn('Sync to Google Sheets error:', err);
+  }
+}
+
+if (btnTestGdriveSync) {
+  btnTestGdriveSync.addEventListener('click', async () => {
+    const url = (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : GDRIVE_SETTINGS.googleScriptUrl);
+    if (!url) {
+      showStatus('Masukkan URL Google Apps Script terlebih dahulu.', 'err');
+      if (inputGoogleScriptUrl) inputGoogleScriptUrl.focus();
+      return;
+    }
+
+    btnTestGdriveSync.disabled = true;
+    btnTestGdriveSync.textContent = 'Menguji...';
+    showStatus('Mengirim data sampel ke Google Sheets & Drive...', 'info');
+
+    const sampleItem = {
+      kode: 'TEST-APAR-01',
+      id: 'TEST-APAR-01',
+      ruangan: 'Ruang Server Uji Coba',
+      gedung: 'GEDUNG UTAMA',
+      lantai: 1,
+      merk: 'YAMATO',
+      kapasitas: '6 Kg',
+      jenisGas: 'Powder',
+      kebersihanTabung: 'good',
+      indikatorTekanan: 'good',
+      kunciPengaman: 'good',
+      selangSemprot: 'good',
+      nozzle: 'good',
+      tagLabel: 'good',
+      status: 'OK (Uji Coba)',
+      keterangan: 'Pemeriksaan uji koneksi Google Sheets & Drive sukses',
+      pemeriksa: currentUser ? (currentUser.name || currentUser.email) : 'Petugas APAR',
+      tgl: new Date().toLocaleString('id-ID')
+    };
+
+    try {
+      const res = await fetch('/api/gdrive/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          googleScriptUrl: url,
+          payload: sampleItem
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showStatus('🎉 Uji koneksi BERHASIL! 1 baris sampel tersimpan di Google Sheets & Drive.', 'ok');
+        GDRIVE_SETTINGS.googleScriptUrl = url;
+        updateGdriveStatusUI();
+      } else {
+        showStatus('❌ Uji koneksi gagal: ' + (data.message || 'Periksa URL Web App'), 'err');
+      }
+    } catch (e) {
+      showStatus('❌ Gagal menghubungi Google Apps Script: ' + e.message, 'err');
+    } finally {
+      btnTestGdriveSync.disabled = false;
+      btnTestGdriveSync.textContent = '🧪 Uji Koneksi';
+    }
+  });
+}
+
+if (btnSyncAllToGdrive) {
+  btnSyncAllToGdrive.addEventListener('click', async () => {
+    const url = GDRIVE_SETTINGS.googleScriptUrl || (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : '');
+    if (!url) {
+      showStatus('URL Google Apps Script belum diisi. Masukkan URL lalu simpan.', 'err');
+      return;
+    }
+
+    const itemsToSend = [];
+    APAR_DATA.forEach(data => {
+      const entry = getLogEntry(data);
+      if (entry) {
+        itemsToSend.push(entry);
+      }
+    });
+
+    if (itemsToSend.length === 0) {
+      showStatus('Belum ada riwayat inspeksi yang tersimpan untuk disinkronkan.', 'info');
+      return;
+    }
+
+    btnSyncAllToGdrive.disabled = true;
+    btnSyncAllToGdrive.textContent = `Mengirim ${itemsToSend.length} data...`;
+    showStatus(`Sedang mengirim ${itemsToSend.length} data inspeksi ke Google Sheets & Drive...`, 'info');
+
+    try {
+      const res = await fetch('/api/gdrive/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          googleScriptUrl: url,
+          payload: { items: itemsToSend }
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showStatus(`🎉 Berhasil menyinkronkan ${itemsToSend.length} data ke Google Sheets & Drive!`, 'ok');
+      } else {
+        showStatus('❌ Sinkronisasi massal gagal: ' + (data.message || 'Error script'), 'err');
+      }
+    } catch (e) {
+      showStatus('❌ Error sinkronisasi: ' + e.message, 'err');
+    } finally {
+      btnSyncAllToGdrive.disabled = false;
+      btnSyncAllToGdrive.textContent = '🚀 Kirim Semua Riwayat Saat Ini ke Google Sheets (Sinkronisasi Massal)';
+    }
+  });
+}
+
+if (btnCopyScriptCode) {
+  btnCopyScriptCode.addEventListener('click', async () => {
+    if (!scriptCodeBlock) return;
+    try {
+      await navigator.clipboard.writeText(scriptCodeBlock.textContent);
+      btnCopyScriptCode.textContent = '✅ Tersalin!';
+      btnCopyScriptCode.style.background = '#10b981';
+      setTimeout(() => {
+        btnCopyScriptCode.textContent = '📋 Salin Kode';
+        btnCopyScriptCode.style.background = '#3b82f6';
+      }, 2500);
+      showStatus('Kode Apps Script berhasil disalin ke clipboard! 📋', 'ok');
+    } catch (e) {
+      showStatus('Gagal menyalin otomatis, silakan blok teks kode secara manual.', 'info');
+    }
+  });
+}
+
+/* ===========================================================
    15. Initial Execution
    =========================================================== */
 initFirebase();
+loadGdriveSettings();
 renderRiwayat();
 renderProgress();
 </script>
