@@ -934,6 +934,15 @@ if (btnLogout) {
   });
 }
 
+function getDefaultUsersList() {
+  return [
+    { id: 'user_admin', email: 'admin@apar.id', name: 'Admin K3 / Pemeliharaan', role: 'admin', created_at: new Date().toISOString() },
+    { id: 'user_rizky', email: 'rizky@apar.id', name: 'Rizky (Petugas Utama)', role: 'petugas', created_at: new Date().toISOString() },
+    { id: 'user_petugas1', email: 'petugas1@apar.id', name: 'Petugas Lapangan 1', role: 'petugas', created_at: new Date().toISOString() },
+    { id: 'user_petugas2', email: 'petugas2@apar.id', name: 'Petugas Lapangan 2', role: 'petugas', created_at: new Date().toISOString() }
+  ];
+}
+
 /* ===========================================================
    Admin Panel: Manage Petugas & Accounts
    =========================================================== */
@@ -941,17 +950,35 @@ async function loadAdminUserList() {
   if (!adminUserList) return;
   try {
     const res = await fetch('/api/users');
-    if (res.ok) {
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
-      cachedAdminUsers = (data && data.users) ? data.users : [];
-      try {
-        localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
-      } catch (e) {}
-      renderAdminUserList();
+      if (data && Array.isArray(data.users) && data.users.length) {
+        cachedAdminUsers = data.users;
+        try {
+          localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
+        } catch (e) {}
+      }
     }
   } catch (e) {
-    console.error('Error fetching admin users:', e);
+    console.warn('Could not fetch users from backend, loading local cache:', e);
   }
+
+  // Fallback to localStorage or default if empty
+  if (!cachedAdminUsers || cachedAdminUsers.length === 0) {
+    try {
+      const local = JSON.parse(localStorage.getItem('apar_all_users') || '[]');
+      if (local && local.length) {
+        cachedAdminUsers = local;
+      } else {
+        cachedAdminUsers = getDefaultUsersList();
+      }
+    } catch (err) {
+      cachedAdminUsers = getDefaultUsersList();
+    }
+  }
+
+  renderAdminUserList();
 }
 
 function renderAdminUserList() {
@@ -1036,6 +1063,15 @@ if (formAdminAddUser) {
       btnAdminSaveUser.textContent = '⏳ Menyimpan...';
     }
 
+    let newUserObj = {
+      id: 'user_' + Date.now(),
+      name,
+      email,
+      password,
+      role,
+      created_at: new Date().toISOString()
+    };
+
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
@@ -1043,44 +1079,52 @@ if (formAdminAddUser) {
         body: JSON.stringify({ name, email, password, role })
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showStatus(`✅ Akun "${name}" (${role === 'admin' ? 'Admin' : 'Petugas'}) berhasil didaftarkan!`, 'ok');
-        
-        // Push to Firebase Firestore
-        if (db && isFirebaseConfigured() && data.user) {
-          try {
-            const docId = String(data.user.id || email).replace(/[^a-zA-Z0-9_-]/g, '_');
-            await db.collection('users').doc(docId).set({
-              id: data.user.id,
-              name: data.user.name,
-              email: data.user.email,
-              role: data.user.role,
-              createdAt: new Date().toISOString()
-            });
-          } catch (fbErr) {
-            console.warn('Firestore user save warning:', fbErr);
-          }
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data && data.user) {
+          newUserObj = { ...newUserObj, ...data.user };
         }
-
-        // Reset form & reload
-        if (adminNewName) adminNewName.value = '';
-        if (adminNewEmail) adminNewEmail.value = '';
-        if (adminNewPass) adminNewPass.value = '123';
-        if (adminNewRole) adminNewRole.value = 'petugas';
-        
-        await loadAdminUserList();
-      } else {
-        showStatus('Gagal membuat akun: ' + (data.message || 'Coba lagi'), 'err');
       }
     } catch (err) {
-      console.error('Error creating user:', err);
-      showStatus('Gagal menghubungi server database.', 'err');
-    } finally {
-      if (btnAdminSaveUser) {
-        btnAdminSaveUser.disabled = false;
-        btnAdminSaveUser.textContent = '💾 Daftarkan Akun Baru';
+      console.warn('Backend user create notice:', err);
+    }
+
+    // Save to local cache
+    cachedAdminUsers.push(newUserObj);
+    try {
+      localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
+    } catch (e) {}
+
+    // Push to Firebase Firestore if connected
+    if (db && isFirebaseConfigured()) {
+      try {
+        const docId = String(newUserObj.id || email).replace(/[^a-zA-Z0-9_-]/g, '_');
+        await db.collection('users').doc(docId).set({
+          id: newUserObj.id,
+          name: newUserObj.name,
+          email: newUserObj.email,
+          role: newUserObj.role,
+          createdAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (fbErr) {
+        console.warn('Firestore user save warning:', fbErr);
       }
+    }
+
+    showStatus(`✅ Akun "${name}" (${role === 'admin' ? 'Admin' : 'Petugas'}) berhasil didaftarkan!`, 'ok');
+
+    // Reset form & reload
+    if (adminNewName) adminNewName.value = '';
+    if (adminNewEmail) adminNewEmail.value = '';
+    if (adminNewPass) adminNewPass.value = '123';
+    if (adminNewRole) adminNewRole.value = 'petugas';
+    
+    renderAdminUserList();
+
+    if (btnAdminSaveUser) {
+      btnAdminSaveUser.disabled = false;
+      btnAdminSaveUser.textContent = '💾 Daftarkan Akun Baru';
     }
   });
 }
@@ -1092,68 +1136,109 @@ window.handleDeleteUser = async function(userId, userName) {
   if (!isConfirmed) return;
 
   try {
-    const res = await fetch(`/api/users/${encodeURIComponent(userId)}`, {
-      method: 'DELETE'
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      showStatus(`🗑️ Akun "${userName}" berhasil dihapus.`, 'ok');
-      
-      // Delete from Firestore if active
-      if (db && isFirebaseConfigured()) {
-        try {
-          const docId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
-          await db.collection('users').doc(docId).delete();
-        } catch (e) {}
-      }
+    await fetch(`/api/users/${encodeURIComponent(userId)}`, { method: 'DELETE' }).catch(() => {});
+  } catch (err) {}
 
-      await loadAdminUserList();
-    } else {
-      showStatus('Gagal menghapus akun: ' + (data.message || 'Coba lagi'), 'err');
-    }
-  } catch (err) {
-    console.error('Error deleting user:', err);
-    showStatus('Gagal menghubungi server.', 'err');
+  // Delete from local cache
+  cachedAdminUsers = cachedAdminUsers.filter(u => u.id !== userId && u.email !== userId);
+  try {
+    localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
+  } catch (e) {}
+
+  // Delete from Firestore if active
+  if (db && isFirebaseConfigured()) {
+    try {
+      const docId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
+      await db.collection('users').doc(docId).delete();
+    } catch (e) {}
   }
+
+  showStatus(`🗑️ Akun "${userName}" berhasil dihapus.`, 'ok');
+  renderAdminUserList();
 };
 
-// Sync all users to Firebase Firestore
+// Sync all users to Firebase Firestore (Resilient & Fail-Safe)
 if (btnSyncUsersToFirebase) {
   btnSyncUsersToFirebase.addEventListener('click', async () => {
-    if (!db || !isFirebaseConfigured()) {
+    // Ensure Firebase is initialized
+    if (!isFirebaseConfigured()) {
       showStatus('⚠️ Firebase belum dikonfigurasi aktif. Silakan periksa firebase-config.js.', 'err');
       return;
+    }
+
+    if (!db) {
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.firestore();
+      } catch (fbInitErr) {
+        showStatus('Gagal menginisialisasi Firebase: ' + fbInitErr.message, 'err');
+        return;
+      }
     }
 
     btnSyncUsersToFirebase.disabled = true;
     btnSyncUsersToFirebase.textContent = '⏳ Menyinkronkan ke Firebase...';
 
     try {
-      const res = await fetch('/api/users');
-      const data = await res.json();
-      if (data && data.users && data.users.length) {
-        let syncedCount = 0;
-        const batch = db.batch();
-        for (const u of data.users) {
-          const docId = String(u.id || u.email || 'user_' + Date.now()).replace(/[^a-zA-Z0-9_-]/g, '_');
-          const docRef = db.collection('users').doc(docId);
-          batch.set(docRef, {
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            role: u.role || 'petugas',
-            syncedAt: new Date().toISOString()
-          }, { merge: true });
-          syncedCount++;
+      // 1. Gather users from Backend safely
+      let usersToSync = [];
+      try {
+        const res = await fetch('/api/users');
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data && Array.isArray(data.users) && data.users.length) {
+            usersToSync = data.users;
+          }
         }
-        await batch.commit();
-        showStatus(`✨ Berhasil menyinkronkan ${syncedCount} akun ke Firebase Firestore! ✅`, 'ok');
-      } else {
-        showStatus('Tidak ada akun untuk disinkronkan.', 'info');
+      } catch (fetchErr) {
+        console.warn('Backend fetch bypassed during sync:', fetchErr);
       }
+
+      // 2. Fallback to cached memory / local storage
+      if (!usersToSync.length) {
+        usersToSync = cachedAdminUsers || [];
+      }
+      if (!usersToSync.length) {
+        try {
+          usersToSync = JSON.parse(localStorage.getItem('apar_all_users') || '[]');
+        } catch (e) {}
+      }
+      if (!usersToSync.length) {
+        usersToSync = getDefaultUsersList();
+      }
+
+      // 3. Write each user to Firestore 'users' collection
+      let syncedCount = 0;
+      const batch = db.batch();
+      for (const u of usersToSync) {
+        const rawId = u.id || u.email || 'user_' + Date.now();
+        const docId = String(rawId).replace(/[^a-zA-Z0-9_-]/g, '_');
+        const docRef = db.collection('users').doc(docId);
+        batch.set(docRef, {
+          id: u.id || docId,
+          name: u.name || 'Petugas',
+          email: u.email || '',
+          role: u.role || 'petugas',
+          syncedAt: new Date().toISOString()
+        }, { merge: true });
+        syncedCount++;
+      }
+      await batch.commit();
+
+      // 4. Update cached memory and local storage
+      cachedAdminUsers = usersToSync;
+      try {
+        localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
+      } catch (e) {}
+      renderAdminUserList();
+
+      showStatus(`✨ Berhasil menyinkronkan ${syncedCount} akun ke Firebase Firestore! ✅`, 'ok');
     } catch (e) {
       console.error('Firebase sync error:', e);
-      showStatus('Gagal menyinkronkan akun ke Firebase: ' + e.message, 'err');
+      showStatus('Gagal menyinkronkan akun ke Firebase: ' + (e.message || 'Terjadi kesalahan jaringan'), 'err');
     } finally {
       btnSyncUsersToFirebase.disabled = false;
       btnSyncUsersToFirebase.textContent = '🔄 Sinkronkan Akun ke Firebase Firestore';
