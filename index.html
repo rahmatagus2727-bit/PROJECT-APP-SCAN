@@ -327,6 +327,35 @@
 
   </div>
 
+  <!-- ======================= PHOTO PREVIEW MODAL ======================= -->
+  <div id="photoModal" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 580px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.5rem;">📷</span>
+          <div>
+            <h2 id="photoModalTitle" style="font-size: 1.15rem; margin: 0;">Bukti Foto Eviden APAR</h2>
+            <p id="photoModalSub" style="font-size: 0.78rem; color: var(--text-muted); margin: 0;">Foto asli hasil upload checklist di aplikasi</p>
+          </div>
+        </div>
+        <button type="button" id="btnClosePhotoModal" class="btn-close-modal">✕</button>
+      </div>
+
+      <div style="margin: 14px 0; max-height: 65vh; overflow: hidden; border-radius: 8px; background: #000; display: flex; justify-content: center; align-items: center; border: 1px solid var(--border);">
+        <img id="photoModalImg" src="" alt="Foto Eviden" style="max-width: 100%; max-height: 60vh; object-fit: contain;" />
+      </div>
+
+      <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: center;">
+        <a id="btnDownloadPhoto" href="#" download="FOTO_EVIDEN_APAR.jpg" class="btn btn-secondary" style="width: auto; text-decoration: none; padding: 8px 16px; font-size: 0.85rem;">
+          ⬇️ Download Foto
+        </a>
+        <button type="button" id="btnClosePhotoModal2" class="btn btn-ghost" style="width: auto; padding: 8px 16px; font-size: 0.85rem;">
+          Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ======================= GOOGLE SHEETS & DRIVE MODAL ======================= -->
   <div id="gdriveModal" class="modal-overlay hidden">
     <div class="modal-card modal-card-lg">
@@ -404,11 +433,16 @@
               <button type="button" id="btnCopyScriptCode" class="btn-copy-code">📋 Salin Kode</button>
             </div>
             <pre class="script-code-box" id="scriptCodeBlock">/**
- * GOOGLE APPS SCRIPT - SISTEM REKAP INSPEKSI APAR & FSS
- * Pasang di: Google Sheets > Extensions > Apps Script
- * Lalu Deploy: Deploy > New deployment > Select type: Web App
- * - Execute as: Me (email Anda)
- * - Who has access: Anyone (Wajib pilih "Anyone" agar bisa dihubungi aplikasi)
+ * GOOGLE APPS SCRIPT - SISTEM PEMELIHARAAN APAR (KODE 1 - 128)
+ * Format Kolom & Header 100% Persis Template Master Data FSS / APAR
+ * 
+ * CARA PASANG:
+ * 1. Di Google Sheets: Klik Extensions > Apps Script
+ * 2. Hapus semua isi, Paste kode ini, lalu klik Simpan (Ctrl+S)
+ * 3. Klik Deploy > New deployment > Jenis: Web app
+ *    - Execute as: Me (email Anda)
+ *    - Who has access: Anyone (Wajib pilih "Anyone" agar bisa diakses aplikasi)
+ * 4. Salin Web App URL (akhiran /exec) dan simpan di aplikasi.
  */
 
 function doPost(e) {
@@ -430,7 +464,7 @@ function handleRequest(e) {
       rawData = e.parameter.payload;
     }
     
-    // Jika hanya ping / buka link di browser tanpa payload
+    // Ping test check
     if (!rawData && (!e || !e.parameter || (!e.parameter.kode && !e.parameter.id && !e.parameter.data))) {
       return ContentService.createTextOutput(JSON.stringify({
         success: true,
@@ -454,111 +488,102 @@ function handleRequest(e) {
     if (!ss) {
       return ContentService.createTextOutput(JSON.stringify({
         success: false,
-        error: "Spreadsheet tidak aktif. Buat script ini langsung dari menu Extensions > Apps Script di Google Sheets."
+        error: "Spreadsheet tidak aktif. Buka script dari menu Extensions > Apps Script."
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    var sheet = ss.getSheetByName("Inspeksi APAR");
+    var sheet = ss.getSheetByName("DATA FSS & APAR");
     if (!sheet) {
-      sheet = ss.insertSheet("Inspeksi APAR");
+      sheet = ss.getSheetByName("Inspeksi APAR") || ss.getActiveSheet();
+      sheet.setName("DATA FSS & APAR");
     }
     
-    // Inisialisasi Header jika masih kosong
-    if (sheet.getLastRow() === 0) {
-      var headers = [
-        "Waktu Input",
-        "Tanggal Pemeriksaan",
-        "Nama Pemeriksa",
-        "Kode APAR",
-        "Lokasi / Ruangan",
-        "Gedung",
-        "Lantai",
-        "Merk",
-        "Kapasitas",
-        "Jenis Gas",
-        "Kebersihan Tabung",
-        "Indikator Tekanan",
-        "Kunci Pengaman / Segel",
-        "Selang Semprot",
-        "Nozzle",
-        "Tag / Label",
-        "Status Akhir",
-        "Catatan / Keterangan",
-        "Foto Bukti Eviden (Drive)"
-      ];
-      sheet.appendRow(headers);
-      
-      var headerRange = sheet.getRange(1, 1, 1, headers.length);
-      headerRange.setBackground("#1e293b");
-      headerRange.setFontColor("#ffffff");
-      headerRange.setFontWeight("bold");
-      headerRange.setHorizontalAlignment("center");
-      sheet.setFrozenRows(1);
-    }
+    // Inisialisasi Header Standar jika sheet baru/kosong
+    initHeaderIfEmpty(sheet);
     
-    // Buat folder foto di Google Drive
+    // Siapkan folder foto Google Drive
     var folderName = "Foto_Inspeksi_APAR";
     var folders = DriveApp.getFoldersByName(folderName);
     var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
     
     var items = Array.isArray(payload.items) ? payload.items : [payload];
-    var insertedCount = 0;
+    var processedCount = 0;
     
     items.forEach(function(item) {
       if (!item || typeof item !== 'object') return;
-      var photoUrl = "-";
+      var kodeStr = String(item.kode || item.id || "").trim();
+      if (!kodeStr) return;
       
-      // Simpan foto Base64 ke Google Drive
+      var photoUrl = "";
+      
+      // Upload Foto Base64 ke Google Drive
       if (item.foto && typeof item.foto === 'string' && item.foto.indexOf("data:image") === 0) {
         try {
           var parts = item.foto.split(",");
           var contentType = parts[0].split(":")[1].split(";")[0];
           var base64Data = parts[1];
           var decoded = Utilities.base64Decode(base64Data);
-          var fileName = "APAR_" + (item.kode || item.id || "UNKNOWN") + "_" + Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyyMMdd_HHmmss") + ".jpg";
+          var fileName = "APAR_" + kodeStr + "_" + Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyyMMdd_HHmmss") + ".jpg";
           var blob = Utilities.newBlob(decoded, contentType, fileName);
           var file = folder.createFile(blob);
           file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
           photoUrl = file.getUrl();
         } catch (imgErr) {
-          photoUrl = "Error foto: " + imgErr.toString();
+          photoUrl = "Error upload foto: " + imgErr.toString();
         }
+      } else if (item.photoDriveUrl) {
+        photoUrl = item.photoDriveUrl;
       } else if (item.foto && typeof item.foto === 'string' && item.foto.indexOf("http") === 0) {
         photoUrl = item.foto;
       }
       
-      var rowData = [
-        new Date(),
-        item.tgl || item.tanggal || Utilities.formatDate(new Date(), "Asia/Jakarta", "dd/MM/yyyy HH:mm"),
-        item.pemeriksa || "-",
-        item.kode || item.id || "-",
+      var kebersihan = item.kebersihanTabung === "good" ? "Bersih" : (item.kebersihanTabung === "bad" ? "Kotor" : (item.kebersihanTabung || "-"));
+      var tekanan = item.indikatorTekanan === "good" ? "Hijau" : (item.indikatorTekanan === "bad" ? "Merah" : (item.indikatorTekanan || "-"));
+      var kunci = item.kunciPengaman === "good" ? "Ada" : (item.kunciPengaman === "bad" ? "Tidak Ada" : (item.kunciPengaman || "-"));
+      var selang = item.selangSemprot === "good" ? "Tidak Pecah" : (item.selangSemprot === "bad" ? "Pecah" : (item.selangSemprot || "-"));
+      var nozzle = item.nozzle === "good" ? "Ada" : (item.nozzle === "bad" ? "Tidak Ada" : (item.nozzle || "-"));
+      var tag = item.tagLabel === "good" ? "Ada" : (item.tagLabel === "bad" ? "Tidak Ada" : (item.tagLabel || "-"));
+      var tgl = item.tanggal ? Utilities.formatDate(new Date(item.tanggal), "Asia/Jakarta", "dd/MM/yyyy HH:mm") : Utilities.formatDate(new Date(), "Asia/Jakarta", "dd/MM/yyyy HH:mm");
+      var fotoFormula = photoUrl ? ('=IMAGE("' + photoUrl + '")') : (item.foto ? "📷 Ada Foto" : "-");
+
+      var rowValues = [
+        kodeStr,
         item.ruangan || "-",
         item.gedung || "-",
         item.lantai || "-",
         item.merk || "-",
         item.kapasitas || "-",
         item.jenisGas || "-",
-        item.kebersihanTabung === "good" ? "Bersih" : (item.kebersihanTabung === "bad" ? "Kotor" : "-"),
-        item.indikatorTekanan === "good" ? "Hijau (Normal)" : (item.indikatorTekanan === "bad" ? "Merah (Abnormal)" : "-"),
-        item.kunciPengaman === "good" ? "Ada / Tersegel" : (item.kunciPengaman === "bad" ? "Tidak Ada / Rusak" : "-"),
-        item.selangSemprot === "good" ? "Baik / Tidak Pecah" : (item.selangSemprot === "bad" ? "Pecah / Rusak" : "-"),
-        item.nozzle === "good" ? "Ada / Bagus" : (item.nozzle === "bad" ? "Tidak Ada / Rusak" : "-"),
-        item.tagLabel === "good" ? "Ada / Jelas" : (item.tagLabel === "bad" ? "Tidak Ada / Pudar" : "-"),
-        item.status || "OK",
+        kebersihan,
+        tekanan,
+        kunci,
+        selang,
+        nozzle,
+        tag,
         item.keterangan || "-",
-        photoUrl
+        fotoFormula,
+        photoUrl || (item.foto ? "Tersimpan di Aplikasi" : "-"),
+        tgl,
+        item.pemeriksa || "Petugas",
+        item.status || "✅ Selesai"
       ];
       
-      sheet.appendRow(rowData);
-      insertedCount++;
+      // Update baris yang sudah ada jika kode ditemukan di Kolom A, atau tambahkan di bawah
+      var targetRow = findRowByKode(sheet, kodeStr);
+      if (targetRow > 2) {
+        sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
+      } else {
+        sheet.appendRow(rowValues);
+      }
+      processedCount++;
     });
     
     return ContentService.createTextOutput(JSON.stringify({
       success: true,
-      message: "Berhasil menyimpan " + insertedCount + " data ke Google Sheets & Drive.",
-      folderUrl: folder.getUrl(),
+      message: "Berhasil memproses " + processedCount + " data APAR ke Google Sheets.",
       spreadsheetUrl: ss.getUrl(),
-      insertedCount: insertedCount
+      folderUrl: folder.getUrl(),
+      processedCount: processedCount
     })).setMimeType(ContentService.MimeType.JSON);
     
   } catch (error) {
@@ -567,6 +592,82 @@ function handleRequest(e) {
       error: error.toString()
     })).setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+function findRowByKode(sheet, kode) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 2) return -1;
+  var colA = sheet.getRange(3, 1, lastRow - 2, 1).getValues();
+  for (var i = 0; i < colA.length; i++) {
+    if (String(colA[i][0]).trim() === String(kode).trim()) {
+      return i + 3;
+    }
+  }
+  return -1;
+}
+
+function initHeaderIfEmpty(sheet) {
+  if (sheet.getLastRow() > 0) return;
+  
+  // Row 1: Merged Headers
+  var row1 = [
+    "APAR", "", "", "", "", "", "",
+    "KONDISI", "", "", "", "", "",
+    "KETERANGAN",
+    "FOTO BUKTI (EVIDEN)",
+    "LINK FOTO DRIVE",
+    "TANGGAL PEMERIKSAAN",
+    "PETUGAS PEMERIKSA",
+    "STATUS"
+  ];
+  
+  // Row 2: Sub Headers
+  var row2 = [
+    "KODE",
+    "RUANGAN",
+    "GEDUNG",
+    "LANTAI",
+    "MERK",
+    "KAPASITAS",
+    "JENIS GAS",
+    "Kebersihan Tabung APAR",
+    "Pemeriksaan Indikator Tekanan",
+    "Pemeriksaan Kunci Pengaman",
+    "Pemeriksaan Selang Semprot",
+    "Pemeriksaan Nozzle",
+    "TAG Label Pemeliharaan",
+    "KETERANGAN",
+    "FOTO BUKTI (EVIDEN)",
+    "LINK FOTO DRIVE",
+    "TANGGAL PEMERIKSAAN",
+    "PETUGAS PEMERIKSA",
+    "STATUS"
+  ];
+  
+  sheet.appendRow(row1);
+  sheet.appendRow(row2);
+  
+  // Merge Headers
+  sheet.getRange("A1:G1").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("H1:M1").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("N1:N2").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("O1:O2").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("P1:P2").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("Q1:Q2").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("R1:R2").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("S1:S2").merge().setHorizontalAlignment("center").setVerticalAlignment("middle");
+  
+  // Row 1 Colors
+  sheet.getRange("A1:G1").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold");
+  sheet.getRange("H1:M1").setBackground("#c00000").setFontColor("#ffffff").setFontWeight("bold");
+  sheet.getRange("N1:N2").setBackground("#c00000").setFontColor("#ffffff").setFontWeight("bold");
+  sheet.getRange("O1:S2").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold");
+  
+  // Row 2 Colors
+  sheet.getRange("A2:G2").setBackground("#1e293b").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
+  sheet.getRange("H2:M2").setBackground("#c00000").setFontColor("#ffffff").setFontWeight("bold").setHorizontalAlignment("center");
+  
+  sheet.setFrozenRows(2);
 }</pre>
           </div>
 
@@ -1333,6 +1434,9 @@ fotoInput.addEventListener('change', async () => {
     currentEntry.foto = await compressImage(file);
     fotoPreview.src = currentEntry.foto;
     fotoPreview.classList.add('show');
+    fotoPreview.style.cursor = 'pointer';
+    fotoPreview.title = 'Klik untuk melihat foto ukuran penuh';
+    fotoPreview.onclick = () => openPhotoModal(currentEntry.foto, 'Foto Eviden APAR Kode ' + (currentEntry.kode || ''), 'Ruangan: ' + (currentEntry.ruangan || ''));
     btnHapusFoto.classList.remove('hidden');
     showStatus('Foto bukti berhasil dipasang 📷', 'ok');
   } catch (e) {
@@ -1426,10 +1530,14 @@ function tampilkanData(kode) {
   if (currentEntry.foto) {
     fotoPreview.src = currentEntry.foto;
     fotoPreview.classList.add('show');
+    fotoPreview.style.cursor = 'pointer';
+    fotoPreview.title = 'Klik untuk melihat foto ukuran penuh';
+    fotoPreview.onclick = () => openPhotoModal(currentEntry.foto, 'Foto Eviden APAR Kode ' + (currentEntry.kode || ''), 'Ruangan: ' + (currentEntry.ruangan || ''));
     btnHapusFoto.classList.remove('hidden');
   } else {
     fotoPreview.src = '';
     fotoPreview.classList.remove('show');
+    fotoPreview.onclick = null;
     btnHapusFoto.classList.add('hidden');
   }
   fotoInput.value = '';
@@ -1802,7 +1910,11 @@ function renderRiwayat() {
   logList.innerHTML = completed.map(({ data, entry }) => {
     const tgl = entry.tanggal ? new Date(entry.tanggal).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
     const eviden = entry.foto ? 'Ada' : 'Tidak Ada';
-    const fotoHtml = entry.foto ? `<img class="log-foto" src="${entry.foto}" alt="Bukti foto">` : '';
+    const fotoHtml = entry.foto ? `
+      <div style="margin-top: 10px; display: flex; align-items: center; gap: 10px;">
+        <img class="log-foto" src="${entry.foto}" alt="Bukti foto" onclick="openPhotoModal('${entry.foto}', 'APAR Kode ${escapeHtml(data.kode)}', '${escapeHtml(data.ruangan || '')} (${escapeHtml(data.gedung || '')})')" style="cursor: pointer; max-height: 85px; border-radius: 6px; border: 1px solid var(--border); transition: transform 0.2s;" title="Klik untuk memperbesar foto">
+        <span style="font-size: 0.75rem; color: var(--text-muted); cursor: pointer;" onclick="openPhotoModal('${entry.foto}', 'APAR Kode ${escapeHtml(data.kode)}', '${escapeHtml(data.ruangan || '')} (${escapeHtml(data.gedung || '')})')">🔍 Klik foto untuk memperbesar</span>
+      </div>` : '';
     const ket = entry.keterangan ? `<div class="log-ket">📝 <strong>Catatan:</strong> ${escapeHtml(entry.keterangan)}</div>` : '';
     const pemeriksa = entry.pemeriksa ? `<div class="log-pemeriksa">👤 Petugas: ${escapeHtml(entry.pemeriksa)}</div>` : '';
 
@@ -1828,6 +1940,39 @@ function renderRiwayat() {
 
 searchRiwayat.addEventListener('input', renderRiwayat);
 filterGedungRiwayat.addEventListener('change', renderRiwayat);
+
+/* ===========================================================
+   Photo Viewer Modal Controller
+   =========================================================== */
+const photoModal = document.getElementById('photoModal');
+const photoModalImg = document.getElementById('photoModalImg');
+const photoModalTitle = document.getElementById('photoModalTitle');
+const photoModalSub = document.getElementById('photoModalSub');
+const btnDownloadPhoto = document.getElementById('btnDownloadPhoto');
+const btnClosePhotoModal = document.getElementById('btnClosePhotoModal');
+const btnClosePhotoModal2 = document.getElementById('btnClosePhotoModal2');
+
+function openPhotoModal(src, title, sub) {
+  if (!photoModal) return;
+  photoModalImg.src = src;
+  photoModalTitle.textContent = title || 'Bukti Foto APAR';
+  photoModalSub.textContent = sub || 'Foto eviden hasil checklist aplikasi';
+  btnDownloadPhoto.href = src;
+  btnDownloadPhoto.download = (title ? title.replace(/[^a-zA-Z0-9]/g, '_') : 'FOTO_APAR') + '.jpg';
+  photoModal.classList.remove('hidden');
+}
+
+function closePhotoModal() {
+  if (photoModal) photoModal.classList.add('hidden');
+}
+
+if (btnClosePhotoModal) btnClosePhotoModal.addEventListener('click', closePhotoModal);
+if (btnClosePhotoModal2) btnClosePhotoModal2.addEventListener('click', closePhotoModal);
+if (photoModal) {
+  photoModal.addEventListener('click', (e) => {
+    if (e.target === photoModal) closePhotoModal();
+  });
+}
 
 /* ===========================================================
    13. Reset History
@@ -1872,7 +2017,7 @@ document.getElementById('btnResetLog').addEventListener('click', async () => {
 });
 
 /* ===========================================================
-   14. Excel Export
+   14. Excel Export (Format Resmi Sesuai Template Master Data)
    =========================================================== */
 document.getElementById('btnDownload').addEventListener('click', async () => {
   const btn = document.getElementById('btnDownload');
@@ -1897,96 +2042,185 @@ async function downloadExcel() {
   wb.created = new Date();
   const ws = wb.addWorksheet('DATA FSS & APAR');
 
+  // Row 1: Group Headers
   const headerRow1 = [
-    'No', 'RUANGAN', 'GEDUNG', 'LANTAI', 'MERK', 'KAPASITAS', 'JENIS GAS', 'kode', 'QRkode',
-    'KONDISI', '', '', '', '', '', '',
-    'KETERANGAN', 'FOTO', 'TANGGAL PERIKSA', 'PETUGAS PEMERIKSA', 'STATUS TUGAS'
+    'APAR', '', '', '', '', '', '',
+    'KONDISI', '', '', '', '', '',
+    'KETERANGAN',
+    'FOTO BUKTI (EVIDEN)',
+    'LINK FOTO DRIVE',
+    'TANGGAL PEMERIKSAAN',
+    'PETUGAS PEMERIKSA',
+    'STATUS'
   ];
+
+  // Row 2: Sub-headers
   const headerRow2 = [
-    '', '', '', '', '', '', '', '', '',
-    'Kebersihan Tabung APAR', 'Pemeriksaan Indikator Tekanan', 'Pemeriksaan Kunci Pengaman',
-    'Pemeriksaan Selang Semprot', 'Pemeriksaan Nozzle', 'TAG Label Pemeliharaan', 'EVIDEN',
-    '', '', '', '', ''
+    'KODE',
+    'RUANGAN',
+    'GEDUNG',
+    'LANTAI',
+    'MERK',
+    'KAPASITAS',
+    'JENIS GAS',
+    'Kebersihan Tabung APAR',
+    'Pemeriksaan Indikator Tekanan',
+    'Pemeriksaan Kunci Pengaman',
+    'Pemeriksaan Selang Semprot',
+    'Pemeriksaan Nozzle',
+    'TAG Label Pemeliharaan',
+    'KETERANGAN',
+    'FOTO BUKTI (EVIDEN)',
+    'LINK FOTO DRIVE',
+    'TANGGAL PEMERIKSAAN',
+    'PETUGAS PEMERIKSA',
+    'STATUS'
   ];
 
   ws.addRow(headerRow1);
   ws.addRow(headerRow2);
 
-  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'Q', 'R', 'S', 'T', 'U'].forEach(col => {
-    ws.mergeCells(`${col}1:${col}2`);
-  });
-  ws.mergeCells('J1:P1');
+  // Merge APAR (A1:G1), KONDISI (H1:M1), KETERANGAN (N1:N2), and other single column headers
+  ws.mergeCells('A1:G1');
+  ws.mergeCells('H1:M1');
+  ws.mergeCells('N1:N2');
+  ws.mergeCells('O1:O2');
+  ws.mergeCells('P1:P2');
+  ws.mergeCells('Q1:Q2');
+  ws.mergeCells('R1:R2');
+  ws.mergeCells('S1:S2');
 
-  [1, 2].forEach(r => {
-    ws.getRow(r).eachCell(cell => {
-      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
-      cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
-    });
-  });
-  ws.getRow(1).height = 20;
-  ws.getRow(2).height = 36;
+  // Styling Header Row 1 & 2
+  const navyFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+  const redFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC00000' } };
+  const whiteFont = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
 
+  // Set row heights
+  ws.getRow(1).height = 24;
+  ws.getRow(2).height = 42;
+
+  // Apply fills & fonts to Row 1
+  for (let c = 1; c <= 7; c++) {
+    const cell = ws.getRow(1).getCell(c);
+    cell.fill = navyFill; cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+  }
+  for (let c = 8; c <= 13; c++) {
+    const cell = ws.getRow(1).getCell(c);
+    cell.fill = redFill; cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+  }
+  const cellN1 = ws.getRow(1).getCell(14);
+  cellN1.fill = redFill; cellN1.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+  cellN1.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  for (let c = 15; c <= 19; c++) {
+    const cell = ws.getRow(1).getCell(c);
+    cell.fill = navyFill; cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  }
+
+  // Apply fills & fonts to Row 2
+  for (let c = 1; c <= 7; c++) {
+    const cell = ws.getRow(2).getCell(c);
+    cell.fill = navyFill; cell.font = whiteFont;
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  }
+  for (let c = 8; c <= 14; c++) {
+    const cell = ws.getRow(2).getCell(c);
+    cell.fill = redFill; cell.font = whiteFont;
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  }
+  for (let c = 15; c <= 19; c++) {
+    const cell = ws.getRow(2).getCell(c);
+    cell.fill = navyFill; cell.font = whiteFont;
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  }
+
+  // Set column widths
   ws.columns = [
-    { width: 6 }, { width: 26 }, { width: 14 }, { width: 8 }, { width: 14 }, { width: 12 }, { width: 18 },
-    { width: 10 }, { width: 10 },
-    { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 18 }, { width: 10 },
-    { width: 28 }, { width: 16 }, { width: 18 }, { width: 20 }, { width: 16 },
+    { width: 8 },  // KODE
+    { width: 28 }, // RUANGAN
+    { width: 15 }, // GEDUNG
+    { width: 9 },  // LANTAI
+    { width: 14 }, // MERK
+    { width: 12 }, // KAPASITAS
+    { width: 22 }, // JENIS GAS
+    { width: 17 }, // Kebersihan Tabung APAR
+    { width: 17 }, // Pemeriksaan Indikator Tekanan
+    { width: 17 }, // Pemeriksaan Kunci Pengaman
+    { width: 17 }, // Pemeriksaan Selang Semprot
+    { width: 16 }, // Pemeriksaan Nozzle
+    { width: 16 }, // TAG Label Pemeliharaan
+    { width: 28 }, // KETERANGAN
+    { width: 20 }, // FOTO BUKTI (EVIDEN)
+    { width: 22 }, // LINK FOTO DRIVE
+    { width: 20 }, // TANGGAL PEMERIKSAAN
+    { width: 18 }, // PETUGAS
+    { width: 14 }, // STATUS
   ];
 
   let rowIndex = 3;
   for (const data of APAR_DATA) {
     const entry = getLogEntry(data);
-    const status = entry ? '✅ Selesai' : (data.kode ? 'Belum' : '-');
+    const status = entry ? '✅ Selesai' : 'Belum Diperiksa';
     const tgl = entry && entry.tanggal ? new Date(entry.tanggal).toLocaleString('id-ID') : '-';
     const pemeriksa = entry && entry.pemeriksa ? entry.pemeriksa : '-';
 
     const row = ws.addRow([
-      data.no ?? '',
+      data.kode ?? data.no ?? '',
       data.ruangan ?? '',
       data.gedung ?? '',
       data.lantai ?? '',
       data.merk ?? '',
       data.kapasitas ?? '',
       data.jenisGas ?? '',
-      data.kode ?? '',
-      data.kode ?? '',
       entry ? (entry.kebersihanTabung === 'good' ? 'Bersih' : entry.kebersihanTabung === 'bad' ? 'Kotor' : '-') : '-',
       entry ? (entry.indikatorTekanan === 'good' ? 'Hijau' : entry.indikatorTekanan === 'bad' ? 'Merah' : '-') : '-',
       entry ? (entry.kunciPengaman === 'good' ? 'Ada' : entry.kunciPengaman === 'bad' ? 'Tidak Ada' : '-') : '-',
       entry ? (entry.selangSemprot === 'good' ? 'Tidak Pecah' : entry.selangSemprot === 'bad' ? 'Pecah' : '-') : '-',
       entry ? (entry.nozzle === 'good' ? 'Ada' : entry.nozzle === 'bad' ? 'Tidak Ada' : '-') : '-',
       entry ? (entry.tagLabel === 'good' ? 'Ada' : entry.tagLabel === 'bad' ? 'Tidak Ada' : '-') : '-',
-      entry ? (entry.foto ? 'Ada' : 'Tidak Ada') : '-',
-      entry && entry.keterangan ? entry.keterangan : '',
-      '',
+      entry && entry.keterangan ? entry.keterangan : '-',
+      entry && entry.foto ? '📷 Ada Foto' : '-',
+      entry && entry.photoDriveUrl ? entry.photoDriveUrl : (entry && entry.foto ? 'Tersimpan di Aplikasi' : '-'),
       tgl,
       pemeriksa,
-      status,
+      status
     ]);
+
+    row.height = entry && entry.foto ? 72 : 22;
 
     row.eachCell(cell => {
       cell.alignment = { vertical: 'middle', wrapText: true, horizontal: 'center' };
       cell.font = { size: 9 };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+      };
     });
-    row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
-    row.getCell(17).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
 
-    if (entry && entry.foto) {
-      row.height = 75;
-      const match = /^data:image\/(png|jpe?g);base64,/.exec(entry.foto);
-      const ext = match ? (match[1] === 'jpg' ? 'jpeg' : match[1]) : 'jpeg';
-      const base64 = entry.foto.split(',')[1];
-      if (base64) {
-        try {
+    row.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+    row.getCell(14).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+
+    // Embed Image Thumbnail in Column 15 (O)
+    if (entry && entry.foto && typeof entry.foto === 'string' && entry.foto.startsWith('data:image')) {
+      try {
+        const match = /^data:image\/(png|jpe?g);base64,/.exec(entry.foto);
+        const ext = match ? (match[1] === 'jpg' ? 'jpeg' : match[1]) : 'jpeg';
+        const base64 = entry.foto.split(',')[1];
+        if (base64) {
           const imgId = wb.addImage({ base64, extension: ext });
           ws.addImage(imgId, {
-            tl: { col: 17, row: rowIndex - 1 },
-            ext: { width: 95, height: 95 },
+            tl: { col: 14, row: rowIndex - 1 },
+            ext: { width: 90, height: 68 },
+            editAs: 'oneCell'
           });
-        } catch (err) {
-          console.warn('Gagal render image ke excel:', err);
         }
+      } catch (err) {
+        console.warn('Gagal render image ke excel:', err);
       }
     }
     rowIndex++;
@@ -2000,7 +2234,7 @@ async function downloadExcel() {
   const a = document.createElement('a');
   const stamp = new Date().toISOString().slice(0, 10);
   a.href = url;
-  a.download = `REKAP_PEMELIHARAAN_APAR_${stamp}.xlsx`;
+  a.download = `REKAP_PEMELIHARAAN_APAR_1-128_${stamp}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

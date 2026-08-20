@@ -3,22 +3,51 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
-<title>Generate QR Kode Alat — Data FSS &amp; APAR</title>
+<title>Generate QR &amp; Barcode APAR (1 - 128)</title>
 <link rel="stylesheet" href="style.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 <script src="data.js"></script>
 <style>
-  .qr-box { text-align: center; margin-top: 16px; }
-  .qr-box > div { background: white; display: inline-block; padding: 14px; border-radius: 12px; }
-  .qr-box p { font-weight: 700; margin: 10px 0 0; color:#0f172a; }
+  .gen-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .type-toggle-group {
+    display: flex;
+    background: #0f172a;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+  .type-toggle-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .type-toggle-btn.active {
+    background: var(--primary);
+    color: white;
+  }
 
   #batchGrid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 16px;
     margin-top: 18px;
   }
-  .qr-item {
+  .sticker-item {
     background: white;
     color: #0f172a;
     border-radius: 12px;
@@ -26,148 +55,320 @@
     text-align: center;
     break-inside: avoid;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    border: 2px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
   }
-  .qr-item .qr-canvas { display:flex; justify-content:center; }
-  .qr-item .qr-kode { font-weight: 800; font-size: 0.9rem; margin-top: 8px; color: #0284c7; }
-  .qr-item .qr-ruangan { font-size: 0.72rem; color: #334155; margin-top: 4px; line-height: 1.3; font-weight: 600; }
+  .sticker-brand-title {
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: #dc2626;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed #cbd5e1;
+    padding-bottom: 4px;
+  }
+  .sticker-code {
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: #0f172a;
+    margin-top: 6px;
+  }
+  .sticker-ruangan {
+    font-size: 0.72rem;
+    color: #334155;
+    font-weight: 700;
+    margin-top: 4px;
+    line-height: 1.25;
+    min-height: 28px;
+  }
+  .sticker-meta {
+    font-size: 0.65rem;
+    color: #64748b;
+    margin-top: 4px;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 4px;
+  }
+  .canvas-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 120px;
+    margin: 4px 0;
+  }
+  .barcode-svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  @media print {
+    body { background: white !important; color: black !important; padding: 0 !important; }
+    .app-container { max-width: 100% !important; padding: 0 !important; }
+    .no-print, header, .nav-link, .card:not(#printArea) { display: none !important; }
+    #printArea { box-shadow: none !important; border: none !important; padding: 0 !important; background: transparent !important; }
+    #batchGrid {
+      grid-template-columns: repeat(3, 1fr) !important;
+      gap: 10px !important;
+      margin: 0 !important;
+    }
+    .sticker-item {
+      border: 1px solid #94a3b8 !important;
+      box-shadow: none !important;
+      page-break-inside: avoid !important;
+      margin-bottom: 10px !important;
+      padding: 8px !important;
+    }
+  }
 </style>
 </head>
 <body>
 
 <div class="app-container">
 
-  <div style="margin-bottom: 12px;">
+  <div class="no-print" style="margin-bottom: 12px;">
     <a class="nav-link" href="index.html" style="display:inline-flex; align-items:center; gap:6px;">
-      <span>←</span> Kembali ke Halaman Scan APAR
+      <span>←</span> Kembali ke Halaman Scan &amp; Rekap APAR
     </a>
   </div>
 
-  <div class="card">
+  <div class="card no-print">
     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-      <div style="font-size: 2rem;">🏷️</div>
+      <div style="font-size: 2.2rem;">🏷️</div>
       <div>
-        <h1 style="margin: 0; font-size: 1.3rem;">Generate &amp; Cetak QR Kode Alat</h1>
-        <p class="hint" style="margin: 4px 0 0 0;">Dibuat otomatis dari Master Data FSS &amp; APAR. Total <strong id="totalAlat">0</strong> alat berkode.</p>
+        <h1 style="margin: 0; font-size: 1.35rem;">Cetak QR &amp; Barcode APAR (Kode 1 - 128)</h1>
+        <p class="hint" style="margin: 4px 0 0 0;">
+          Daftar 128 APAR resmi sesuai Master Data FSS. Siap cetak stiker QR atau Barcode garis standar.
+        </p>
       </div>
     </div>
 
-    <label for="filterGedung">Filter Berdasarkan Gedung</label>
-    <select id="filterGedung">
-      <option value="">Semua Gedung</option>
-    </select>
+    <!-- Mode format toggle -->
+    <label style="margin-top: 12px;">Pilih Format Stiker:</label>
+    <div class="type-toggle-group">
+      <button type="button" class="type-toggle-btn active" id="btnModeQR" onclick="setStickerMode('qr')">
+        📱 QR Code (Standar Scan HP)
+      </button>
+      <button type="button" class="type-toggle-btn" id="btnModeBarcode" onclick="setStickerMode('barcode')">
+        📊 Barcode Garis (Code 128)
+      </button>
+      <button type="button" class="type-toggle-btn" id="btnModeCombo" onclick="setStickerMode('combo')">
+        🔲 Lengkap (QR + Spesifikasi)
+      </button>
+    </div>
 
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px;">
-      <button type="button" id="btnGenerateBatch">🔳 Muat Semua QR</button>
-      <button type="button" id="btnPrintBatch" class="secondary">🖨️ Cetak / Print QR</button>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px;">
+      <div>
+        <label for="filterGedung">Filter Gedung</label>
+        <select id="filterGedung">
+          <option value="">Semua Gedung (128 Alat)</option>
+        </select>
+      </div>
+      <div>
+        <label for="searchKode">Cari Kode / Ruangan</label>
+        <input type="text" id="searchKode" placeholder="Contoh: 1, 110, Server..." />
+      </div>
+    </div>
+
+    <div class="gen-header-actions">
+      <button type="button" id="btnGenerateBatch" class="btn btn-primary" style="flex: 1;">
+        🔄 Refresh Daftar Stiker
+      </button>
+      <button type="button" id="btnPrintBatch" class="btn btn-secondary" style="flex: 1;">
+        🖨️ Cetak / Print Stiker (A4)
+      </button>
     </div>
   </div>
 
+  <!-- Print Area -->
   <div class="card" id="printArea">
-    <h2><span>📋</span> Daftar Stiker QR Alat</h2>
+    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:8px; margin-bottom:12px;">
+      <h2 style="margin:0;"><span>📋</span> Daftar Stiker APAR (<span id="renderCount">128</span> Alat)</h2>
+      <span class="hint no-print">Klik tombol cetak untuk mencetak stiker</span>
+    </div>
     <div id="batchGrid"></div>
   </div>
 
-  <div class="card">
-    <h2><span>✏️</span> Buat 1 QR Kode Manual</h2>
-    <label for="kode">Ketik Kode Alat</label>
+  <!-- Single Manual Generator -->
+  <div class="card no-print" style="margin-top: 16px;">
+    <h2><span>✏️</span> Buat 1 QR / Barcode Khusus Manual</h2>
+    <label for="manualKodeInput">Ketik Kode APAR (1 - 128 atau kode custom):</label>
     <div style="display:flex; gap: 8px;">
-      <input type="text" id="kode" placeholder="Contoh: 110" />
-      <button type="button" id="btnBuat" class="secondary" style="width: auto; min-width: 100px; margin-top:0;">Buat QR</button>
+      <input type="text" id="manualKodeInput" placeholder="Contoh: 1" value="1" />
+      <button type="button" id="btnBuatManual" class="btn btn-primary" style="width: auto; min-width: 110px;">
+        Buat Stiker
+      </button>
     </div>
 
-    <div class="qr-box hidden" id="qrBox">
-      <div id="qrCanvas"></div>
-      <p id="qrLabel"></p>
-      <button type="button" id="btnPrint" class="secondary small" style="margin-top: 12px; width: auto;">🖨️ Cetak QR Ini</button>
+    <div id="singleResultBox" style="margin-top: 16px; display:none; text-align: center;">
+      <div style="display: inline-block; background: white; padding: 16px; border-radius: 12px; border: 2px solid #e2e8f0; max-width: 260px;">
+        <div id="singleCanvas" style="display:flex; justify-content:center;"></div>
+        <div id="singleLabel" style="font-weight: 800; color: #0f172a; margin-top: 8px; font-size: 1.1rem;"></div>
+        <div id="singleInfo" style="font-size: 0.75rem; color: #475569; margin-top: 4px;"></div>
+      </div>
     </div>
   </div>
 
 </div>
 
 <script>
-  document.getElementById('totalAlat').textContent = APAR_DATA.filter(r => r.kode).length;
+  let currentMode = 'qr'; // 'qr', 'barcode', 'combo'
 
   const filterGedung = document.getElementById('filterGedung');
+  const searchKode = document.getElementById('searchKode');
+  const batchGrid = document.getElementById('batchGrid');
+  const renderCount = document.getElementById('renderCount');
+
+  // Populate building filter dropdown
   const gedungList = [...new Set(APAR_DATA.map(r => r.gedung).filter(Boolean))].sort();
   gedungList.forEach(g => {
     const opt = document.createElement('option');
     opt.value = g;
-    opt.textContent = g;
+    const count = APAR_DATA.filter(r => r.gedung === g).length;
+    opt.textContent = `${g} (${count} alat)`;
     filterGedung.appendChild(opt);
   });
 
-  const batchGrid = document.getElementById('batchGrid');
+  function setStickerMode(mode) {
+    currentMode = mode;
+    document.getElementById('btnModeQR').classList.toggle('active', mode === 'qr');
+    document.getElementById('btnModeBarcode').classList.toggle('active', mode === 'barcode');
+    document.getElementById('btnModeCombo').classList.toggle('active', mode === 'combo');
+    renderStickers();
+  }
 
-  function generateBatch() {
+  function renderStickers() {
     const gedung = filterGedung.value;
-    let list = APAR_DATA.filter(r => r.kode);
-    if (gedung) list = list.filter(r => r.gedung === gedung);
+    const query = (searchKode.value || '').toLowerCase().trim();
 
+    let list = APAR_DATA.filter(r => r.kode);
+    if (gedung) {
+      list = list.filter(r => r.gedung === gedung);
+    }
+    if (query) {
+      list = list.filter(r => 
+        String(r.kode).toLowerCase().includes(query) ||
+        (r.ruangan || '').toLowerCase().includes(query) ||
+        (r.gedung || '').toLowerCase().includes(query) ||
+        (r.merk || '').toLowerCase().includes(query)
+      );
+    }
+
+    renderCount.textContent = list.length;
     batchGrid.innerHTML = '';
+
+    if (list.length === 0) {
+      batchGrid.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 30px; color:#94a3b8;">Tidak ada alat yang cocok dengan filter.</div>';
+      return;
+    }
+
     list.forEach(r => {
       const item = document.createElement('div');
-      item.className = 'qr-item';
+      item.className = 'sticker-item';
 
-      const canvasDiv = document.createElement('div');
-      canvasDiv.className = 'qr-canvas';
-      item.appendChild(canvasDiv);
+      const header = document.createElement('div');
+      header.className = 'sticker-brand-title';
+      header.textContent = '🔥 INSPEKSI APAR / FSS';
+      item.appendChild(header);
 
-      const kodeP = document.createElement('div');
-      kodeP.className = 'qr-kode';
-      kodeP.textContent = 'KODE: ' + r.kode;
-      item.appendChild(kodeP);
+      const canvasWrapper = document.createElement('div');
+      canvasWrapper.className = 'canvas-wrapper';
 
-      const ruanganP = document.createElement('div');
-      ruanganP.className = 'qr-ruangan';
-      ruanganP.textContent = `${r.ruangan || ''} — ${r.gedung || ''}${r.lantai ? ' LT.' + r.lantai : ''}`;
-      item.appendChild(ruanganP);
+      if (currentMode === 'qr' || currentMode === 'combo') {
+        const qrContainer = document.createElement('div');
+        canvasWrapper.appendChild(qrContainer);
+        new QRCode(qrContainer, {
+          text: String(r.kode),
+          width: currentMode === 'combo' ? 100 : 130,
+          height: currentMode === 'combo' ? 100 : 130,
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } else if (currentMode === 'barcode') {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.className = 'barcode-svg';
+        canvasWrapper.appendChild(svg);
+        try {
+          JsBarcode(svg, String(r.kode), {
+            format: "CODE128",
+            width: 1.8,
+            height: 50,
+            displayValue: true,
+            fontSize: 14,
+            textMargin: 4,
+            margin: 0
+          });
+        } catch (e) {
+          console.warn('Barcode render error:', e);
+        }
+      }
+
+      item.appendChild(canvasWrapper);
+
+      const kodeDiv = document.createElement('div');
+      kodeDiv.className = 'sticker-code';
+      kodeDiv.textContent = `KODE: ${r.kode}`;
+      item.appendChild(kodeDiv);
+
+      const ruanganDiv = document.createElement('div');
+      ruanganDiv.className = 'sticker-ruangan';
+      ruanganDiv.textContent = r.ruangan || '-';
+      item.appendChild(ruanganDiv);
+
+      const metaDiv = document.createElement('div');
+      metaDiv.className = 'sticker-meta';
+      metaDiv.textContent = `${r.gedung || ''} ${r.lantai ? 'LT.' + r.lantai : ''} • ${r.merk || ''} (${r.kapasitas || ''})`;
+      item.appendChild(metaDiv);
 
       batchGrid.appendChild(item);
-
-      new QRCode(canvasDiv, {
-        text: String(r.kode),
-        width: 130,
-        height: 130,
-      });
     });
   }
 
-  document.getElementById('btnGenerateBatch').addEventListener('click', generateBatch);
-  filterGedung.addEventListener('change', generateBatch);
+  document.getElementById('btnGenerateBatch').addEventListener('click', renderStickers);
+  filterGedung.addEventListener('change', renderStickers);
+  searchKode.addEventListener('input', renderStickers);
+
   document.getElementById('btnPrintBatch').addEventListener('click', () => {
-    if (!batchGrid.children.length) generateBatch();
     window.print();
   });
 
-  generateBatch();
+  // Single Manual Generator
+  const manualKodeInput = document.getElementById('manualKodeInput');
+  const btnBuatManual = document.getElementById('btnBuatManual');
+  const singleResultBox = document.getElementById('singleResultBox');
+  const singleCanvas = document.getElementById('singleCanvas');
+  const singleLabel = document.getElementById('singleLabel');
+  const singleInfo = document.getElementById('singleInfo');
 
-  const kodeInput = document.getElementById('kode');
-  const qrBox = document.getElementById('qrBox');
-  const qrCanvas = document.getElementById('qrCanvas');
-  const qrLabel = document.getElementById('qrLabel');
-
-  document.getElementById('btnBuat').addEventListener('click', () => {
-    const kode = kodeInput.value.trim();
+  btnBuatManual.addEventListener('click', () => {
+    const kode = manualKodeInput.value.trim();
     if (!kode) return;
 
-    qrCanvas.innerHTML = '';
-    new QRCode(qrCanvas, {
+    singleCanvas.innerHTML = '';
+    singleResultBox.style.display = 'block';
+    singleLabel.textContent = `KODE: ${kode}`;
+
+    const found = APAR_DATA.find(r => String(r.kode) === String(kode));
+    if (found) {
+      singleInfo.textContent = `${found.ruangan || ''} (${found.gedung || ''} LT.${found.lantai || '1'}) - ${found.merk || ''} ${found.kapasitas || ''}`;
+    } else {
+      singleInfo.textContent = 'Kode APAR Kustom';
+    }
+
+    new QRCode(singleCanvas, {
       text: kode,
-      width: 240,
-      height: 240,
+      width: 140,
+      height: 140,
+      correctLevel: QRCode.CorrectLevel.M
     });
-
-    qrLabel.textContent = 'KODE ALAT: ' + kode;
-    qrBox.classList.remove('hidden');
   });
 
-  document.getElementById('btnPrint').addEventListener('click', () => {
-    window.print();
+  manualKodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') btnBuatManual.click();
   });
 
-  kodeInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') document.getElementById('btnBuat').click();
-  });
+  // Initial render
+  renderStickers();
 </script>
 
 </body>
