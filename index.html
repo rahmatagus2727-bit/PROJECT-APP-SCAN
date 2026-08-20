@@ -751,91 +751,96 @@ if (authForm) {
 
     try {
       // 1. Primary: Server Verification
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier, password }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier, password }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
 
-      const data = await res.json().catch(() => null);
+        const data = await res.json().catch(() => null);
 
-      if (res.ok && data && data.success && data.user) {
-        loginSuccess = true;
-        loggedUser = data.user;
-      } else if (res.status === 401 && data && data.message) {
-        // Explicit credential rejection from server
-        showStatus(data.message, 'err');
+        if (res.ok && data && data.success && data.user) {
+          loginSuccess = true;
+          loggedUser = data.user;
+        } else if (res.status === 401 && data && data.message) {
+          // Explicit credential rejection from server
+          showStatus(data.message, 'err');
+          if (authPassword) {
+            authPassword.focus();
+            authPassword.select();
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn('Server auth unreachable, attempting offline/cached validation:', err);
+      }
+
+      // 2. Secondary: Offline / Resilient Local & Fallback Validation
+      if (!loginSuccess) {
+        const cleanId = identifier.toLowerCase().trim();
+        const cleanPass = password.trim();
+
+        // Check Admin default
+        if ((cleanId === 'admin' || cleanId === 'user_admin' || cleanId === 'admin k3' || cleanId.includes('admin')) && (cleanPass === 'admin' || cleanPass === '123')) {
+          loginSuccess = true;
+          loggedUser = {
+            id: 'user_admin',
+            name: 'Admin K3 / Pemeliharaan',
+            email: 'admin@apar.id',
+            role: 'admin'
+          };
+        }
+        // Check Default Petugas
+        else if ((cleanId === 'rizky' || cleanId.startsWith('rizky')) && cleanPass === '123') {
+          loginSuccess = true;
+          loggedUser = { id: 'user_rizky', name: 'Rizky (Petugas Utama)', email: 'rizky@apar.id', role: 'petugas' };
+        }
+        else if (cleanId === 'petugas1' && cleanPass === '123') {
+          loginSuccess = true;
+          loggedUser = { id: 'user_petugas1', name: 'Petugas Lapangan 1', email: 'petugas1@apar.id', role: 'petugas' };
+        }
+        else if (cleanId === 'petugas2' && cleanPass === '123') {
+          loginSuccess = true;
+          loggedUser = { id: 'user_petugas2', name: 'Petugas Lapangan 2', email: 'petugas2@apar.id', role: 'petugas' };
+        }
+        else {
+          // Check localStorage cached accounts
+          try {
+            const cached = JSON.parse(localStorage.getItem('apar_all_users') || '[]');
+            const found = cached.find(u => 
+              (u.email && u.email.toLowerCase() === cleanId) ||
+              (u.name && u.name.toLowerCase() === cleanId) ||
+              (u.id && u.id.toLowerCase() === cleanId)
+            );
+            if (found && String(found.password || '123').trim() === cleanPass) {
+              loginSuccess = true;
+              loggedUser = found;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (loginSuccess && loggedUser) {
+        setLoggedInUser(loggedUser);
+        const roleText = (loggedUser.role === 'admin') ? 'Administrator K3' : 'Petugas Lapangan';
+        showStatus(`🔑 Selamat bertugas, ${loggedUser.name} (${roleText})!`, 'ok');
+        fetchFreshCloudData(false);
+      } else {
+        showStatus('❌ Akun tidak ditemukan atau kata sandi salah! Periksa Nama/ID & PIN Anda.', 'err');
         if (authPassword) {
           authPassword.focus();
           authPassword.select();
         }
-        return;
       }
-    } catch (err) {
-      console.warn('Server auth unreachable, attempting offline/cached validation:', err);
-    }
-
-    // 2. Secondary: Offline / Resilient Local & Fallback Validation
-    if (!loginSuccess) {
-      const cleanId = identifier.toLowerCase().trim();
-      const cleanPass = password.trim();
-
-      // Check Admin default
-      if ((cleanId === 'admin' || cleanId === 'user_admin' || cleanId === 'admin k3' || cleanId.includes('admin')) && (cleanPass === 'admin' || cleanPass === '123')) {
-        loginSuccess = true;
-        loggedUser = {
-          id: 'user_admin',
-          name: 'Admin K3 / Pemeliharaan',
-          email: 'admin@apar.id',
-          role: 'admin'
-        };
-      }
-      // Check Default Petugas
-      else if ((cleanId === 'rizky' || cleanId.startsWith('rizky')) && cleanPass === '123') {
-        loginSuccess = true;
-        loggedUser = { id: 'user_rizky', name: 'Rizky (Petugas Utama)', email: 'rizky@apar.id', role: 'petugas' };
-      }
-      else if (cleanId === 'petugas1' && cleanPass === '123') {
-        loginSuccess = true;
-        loggedUser = { id: 'user_petugas1', name: 'Petugas Lapangan 1', email: 'petugas1@apar.id', role: 'petugas' };
-      }
-      else if (cleanId === 'petugas2' && cleanPass === '123') {
-        loginSuccess = true;
-        loggedUser = { id: 'user_petugas2', name: 'Petugas Lapangan 2', email: 'petugas2@apar.id', role: 'petugas' };
-      }
-      else {
-        // Check localStorage cached accounts
-        try {
-          const cached = JSON.parse(localStorage.getItem('apar_all_users') || '[]');
-          const found = cached.find(u => 
-            (u.email && u.email.toLowerCase() === cleanId) ||
-            (u.name && u.name.toLowerCase() === cleanId) ||
-            (u.id && u.id.toLowerCase() === cleanId)
-          );
-          if (found && String(found.password || '123').trim() === cleanPass) {
-            loginSuccess = true;
-            loggedUser = found;
-          }
-        } catch (e) {}
-      }
-    }
-
-    if (loginSuccess && loggedUser) {
-      setLoggedInUser(loggedUser);
-      const roleText = (loggedUser.role === 'admin') ? 'Administrator K3' : 'Petugas Lapangan';
-      showStatus(`🔑 Selamat bertugas, ${loggedUser.name} (${roleText})!`, 'ok');
-      fetchFreshCloudData(false);
-    } else {
-      showStatus('❌ Akun tidak ditemukan atau kata sandi salah! Periksa Nama/ID & PIN Anda.', 'err');
-      if (authPassword) {
-        authPassword.focus();
-        authPassword.select();
-      }
+    } catch (unexpectedErr) {
+      console.error('Unexpected login error:', unexpectedErr);
+      showStatus('Terjadi kesalahan saat memproses login.', 'err');
     } finally {
       if (btnAuthSubmit) {
         btnAuthSubmit.disabled = false;
