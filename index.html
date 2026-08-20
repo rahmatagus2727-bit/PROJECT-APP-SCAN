@@ -2062,6 +2062,12 @@ function setGdriveAlert(msg, type = 'info') {
 
 function openGdriveModal() {
   if (gdriveModal) gdriveModal.classList.remove('hidden');
+  if (inputGoogleScriptUrl && GDRIVE_SETTINGS.googleScriptUrl) {
+    inputGoogleScriptUrl.value = GDRIVE_SETTINGS.googleScriptUrl;
+  }
+  if (checkAutoSyncGdrive) {
+    checkAutoSyncGdrive.checked = (GDRIVE_SETTINGS.autoSyncGdrive !== false);
+  }
   setGdriveAlert('');
 }
 
@@ -2211,6 +2217,7 @@ async function syncSingleToGoogleSheets(entry) {
 if (btnTestGdriveSync) {
   btnTestGdriveSync.addEventListener('click', async () => {
     let url = (inputGoogleScriptUrl ? inputGoogleScriptUrl.value.trim() : GDRIVE_SETTINGS.googleScriptUrl);
+    url = url.replace(/^["']|["']$/g, '');
     if (!url) {
       setGdriveAlert('⚠️ Silakan masukkan URL Web App Google Apps Script Anda terlebih dahulu.', 'err');
       if (inputGoogleScriptUrl) inputGoogleScriptUrl.focus();
@@ -2224,6 +2231,10 @@ if (btnTestGdriveSync) {
 
     if (url.includes('/edit')) {
       url = url.replace(/\/edit(\?.*)?$/, '/exec$1');
+      if (inputGoogleScriptUrl) inputGoogleScriptUrl.value = url;
+    }
+    if (url.includes('/dev')) {
+      url = url.replace(/\/dev(\?.*)?$/, '/exec$1');
       if (inputGoogleScriptUrl) inputGoogleScriptUrl.value = url;
     }
 
@@ -2271,7 +2282,17 @@ if (btnTestGdriveSync) {
       }
 
       if (data.success) {
-        setGdriveAlert(`🎉 <b>Koneksi Berhasil 100%!</b><br>1 baris data tes telah berhasil masuk ke Google Sheets Anda dan folder foto Google Drive siap digunakan.`, 'ok');
+        const sheetUrl = data.data && data.data.spreadsheetUrl ? data.data.spreadsheetUrl : '';
+        const driveUrl = data.data && data.data.folderUrl ? data.data.folderUrl : '';
+        let linksHtml = '';
+        if (sheetUrl) {
+          linksHtml += `<div style="margin-top: 8px;"><a href="${sheetUrl}" target="_blank" rel="noopener" style="color: #60a5fa; font-weight: bold; text-decoration: underline;">📊 Buka Spreadsheet Anda Disini</a></div>`;
+        }
+        if (driveUrl) {
+          linksHtml += `<div style="margin-top: 4px;"><a href="${driveUrl}" target="_blank" rel="noopener" style="color: #60a5fa; text-decoration: underline;">📁 Buka Folder Foto Drive</a></div>`;
+        }
+
+        setGdriveAlert(`🎉 <b>Koneksi Berhasil 100%!</b><br>1 baris data tes telah berhasil masuk ke Google Sheets Anda.${linksHtml}`, 'ok');
         GDRIVE_SETTINGS.googleScriptUrl = url;
         try {
           localStorage.setItem('apar_gdrive_config', JSON.stringify(GDRIVE_SETTINGS));
