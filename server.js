@@ -874,19 +874,36 @@ async function callGoogleAppsScript(targetUrl, payload) {
   }
 
   try {
-    const response = await fetch(cleanUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8'
-      },
-      body: bodyStr,
-      redirect: 'follow'
-    });
+    let currentUrl = cleanUrl;
+    let response;
+    let attempts = 0;
+
+    // Manually follow redirects to preserve POST method
+    while (attempts < 5) {
+      attempts++;
+      response = await fetch(currentUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8'
+        },
+        body: bodyStr,
+        redirect: 'manual'
+      });
+
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const redirectUrl = response.headers.get('location');
+        if (redirectUrl) {
+          currentUrl = redirectUrl;
+          continue;
+        }
+      }
+      break;
+    }
 
     const text = await response.text();
     return {
       status: response.status,
-      ok: response.ok,
+      ok: response.ok || response.status === 200,
       text: text
     };
   } catch (err) {
@@ -930,21 +947,36 @@ app.post('/api/gdrive/sync', async (req, res) => {
 
   try {
     const gasResult = await callGoogleAppsScript(targetUrl, payload);
-    const text = gasResult.text || '';
+    const text = (gasResult.text || '').trim();
 
-    // 3. Detect if Google returned a Sign-in / Access Denied HTML page
-    if (text.includes('accounts.google.com') || text.includes('Sign in - Google Accounts') || text.includes('serviceLogin') || (text.includes('<!DOCTYPE html>') && text.includes('Google') && text.includes('Sign in'))) {
+    // 3. Detect HTML responses (Google Sign-In / Access Denied / 404 / Error Pages)
+    const isHtml = text.startsWith('<') || text.includes('<!DOCTYPE html>') || text.includes('<html');
+
+    if (isHtml) {
+      if (text.includes('accounts.google.com') || text.includes('Sign in') || text.includes('serviceLogin') || text.includes('authorization_required')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Akses Ditolak Google: Pengaturan "Who has access" di Google Apps Script belum diset ke "Anyone" (Siapa saja). Solusi: Buka Google Apps Script > Deploy > Manage deployments > Edit > ganti "Who has access" ke "Anyone" > Deploy ulang.'
+        });
+      }
+
+      if (text.includes('Script function not found') || text.includes('doGet') || text.includes('doPost')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fungsi doPost/doGet tidak ditemukan di Google Apps Script. Pastikan Anda telah menyalin seluruh kode di tutorial (termasuk doGet & doPost) lalu buat "New deployment".'
+        });
+      }
+
+      if (gasResult.status === 405 || text.includes('405') || text.includes('Method Not Allowed')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Google Apps Script mengembalikan 405 Not Allowed. Solusi: Buka Google Apps Script > Klik "Deploy" > "Manage deployments" > Edit (ikon pensil) > Version: pilih "New version" > Klik "Deploy".'
+        });
+      }
+
       return res.status(400).json({
         success: false,
-        message: 'Akses Ditolak Google: Pengaturan "Who has access" di Google Apps Script belum diset ke "Anyone" (Siapa saja). Silakan buka Google Apps Script > Deploy > Manage deployments > Edit (ikon pensil) > ganti "Who has access" ke "Anyone" > Deploy ulang.'
-      });
-    }
-
-    // 4. Detect 405 Method Not Allowed specifically
-    if (gasResult.status === 405 || text.includes('405') || text.includes('Method Not Allowed')) {
-      return res.status(400).json({
-        success: false,
-        message: 'Google Apps Script mengembalikan 405 Not Allowed. Hal ini terjadi jika script di Google Sheets belum dideploy ke Versi Baru (New Version) setelah Anda menempelkan kode doPost/doGet. Solusi: Buka Google Apps Script > Klik "Deploy" > "Manage deployments" > Ikon Pensil (Edit) > Version: pilih "New version" > Klik "Deploy".'
+        message: 'Google Apps Script mengembalikan halaman HTML (bukan respon JSON). Pastikan "Who has access" diatur ke "Anyone", sertakan fungsi doGet & doPost, lalu buat New Deployment.'
       });
     }
 
@@ -962,8 +994,8 @@ app.post('/api/gdrive/sync', async (req, res) => {
         data: result
       });
     } else {
-      const errMsg = result.error || result.message || text.slice(0, 300) || `Google Apps Script status: ${gasResult.status}`;
-      return res.status(gasResult.status >= 400 ? gasResult.status : 500).json({
+      const errMsg = result.error || result.message || 'Google Apps Script mengembalikan error. Periksa kembali script Anda.';
+      return res.status(gasResult.status >= 400 ? gasResult.status : 400).json({
         success: false,
         message: errMsg,
         details: text

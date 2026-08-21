@@ -370,9 +370,27 @@ service cloud.firestore {
 
                 <div style="position: relative; margin-bottom: 8px;">
                   <button type="button" onclick="copyGasCode()" style="position: absolute; right: 8px; top: 8px; background: #38bdf8; color: #000; border: none; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; cursor: pointer;">📋 Copy Kode</button>
-                  <pre id="gasCodeBox" style="background:#0f172a; padding:10px; border-radius:6px; font-size:0.7rem; color:#4ade80; overflow-x:auto; max-height:200px; margin:0;">function doPost(e) {
+                  <pre id="gasCodeBox" style="background:#0f172a; padding:10px; border-radius:6px; font-size:0.75rem; color:#4ade80; overflow-x:auto; max-height:220px; margin:0;">function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({
+    success: true,
+    message: "Google Apps Script Web App APAR K3 aktif & siap menerima data! ✅",
+    timestamp: new Date().toISOString()
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
   try {
-    var data = JSON.parse(e.postData.contents);
+    var data = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        data = JSON.parse(e.postData.contents);
+      } catch (jsonErr) {
+        data = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      data = e.parameter;
+    }
+
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName("Riwayat_APAR") || ss.insertSheet("Riwayat_APAR");
     
@@ -382,14 +400,18 @@ service cloud.firestore {
     }
 
     var photoUrl = "-";
-    if (data.foto && data.foto.indexOf("base64,") !== -1) {
+    if (data.foto && typeof data.foto === "string" && data.foto.indexOf("base64,") !== -1) {
       try {
-        var folder = DriveApp.getFoldersByName("Foto_Eviden_APAR").hasNext() ? DriveApp.getFoldersByName("Foto_Eviden_APAR").next() : DriveApp.createFolder("Foto_Eviden_APAR");
-        var blob = Utilities.newBlob(Utilities.base64Decode(data.foto.split("base64,")[1]), "image/jpeg", "EVIDEN_" + (data.kode || "APAR") + "_" + Date.now() + ".jpg");
+        var folderName = "Foto_Eviden_APAR";
+        var folder = DriveApp.getFoldersByName(folderName).hasNext() ? DriveApp.getFoldersByName(folderName).next() : DriveApp.createFolder(folderName);
+        var base64Data = data.foto.split("base64,")[1];
+        var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), "image/jpeg", "EVIDEN_" + (data.kode || "APAR") + "_" + Date.now() + ".jpg");
         var file = folder.createFile(blob);
         file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
         photoUrl = file.getUrl();
       } catch (imgErr) { photoUrl = "Err: " + imgErr.toString(); }
+    } else if (data.photoUrl) {
+      photoUrl = data.photoUrl;
     }
 
     sheet.appendRow([
@@ -401,7 +423,7 @@ service cloud.firestore {
       data.status || "OK", data.keterangan || "-", photoUrl, data.pemeriksa || "Petugas"
     ]);
 
-    return ContentService.createTextOutput(JSON.stringify({ success: true, photoUrl: photoUrl })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Data berhasil dicatat ke Google Sheets & Drive!", photoUrl: photoUrl })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
