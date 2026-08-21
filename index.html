@@ -509,6 +509,21 @@ let auth = null;
 let currentUser = null;
 const COLLECTION_NAME = 'apar_log';
 
+let GDRIVE_SETTINGS = {
+  googleScriptUrl: localStorage.getItem('apar_gdrive_url') || '',
+  autoSyncGdrive: true
+};
+try {
+  const cachedGdrive = localStorage.getItem('apar_gdrive_config');
+  if (cachedGdrive) {
+    const parsedGdrive = JSON.parse(cachedGdrive);
+    if (parsedGdrive && parsedGdrive.googleScriptUrl) {
+      GDRIVE_SETTINGS.googleScriptUrl = parsedGdrive.googleScriptUrl;
+      GDRIVE_SETTINGS.autoSyncGdrive = parsedGdrive.autoSyncGdrive !== false;
+    }
+  }
+} catch (e) {}
+
 /* Helper lookup for log entries matching an APAR item */
 function getLogEntry(aparItem) {
   if (!aparItem) return null;
@@ -1522,10 +1537,9 @@ if (btnSyncUsersToFirebase) {
 }
 
 // Helper & Handlers for Google Apps Script & Drive Integration
-let GDRIVE_SETTINGS = {
-  googleScriptUrl: localStorage.getItem('apar_gdrive_url') || '',
-  autoSyncGdrive: true
-};
+if (!GDRIVE_SETTINGS.googleScriptUrl) {
+  GDRIVE_SETTINGS.googleScriptUrl = localStorage.getItem('apar_gdrive_url') || '';
+}
 
 function sanitizeScriptUrl(inputUrl) {
   if (!inputUrl) return '';
@@ -2729,7 +2743,6 @@ async function downloadExcel() {
 /* ===========================================================
    14. Google Sheets & Google Drive Integration Engine
    =========================================================== */
-let GDRIVE_SETTINGS = { googleScriptUrl: '', autoSyncGdrive: true };
 
 const gdriveModal = document.getElementById('gdriveModal');
 const btnOpenGdriveModal = document.getElementById('btnOpenGdriveModal');
