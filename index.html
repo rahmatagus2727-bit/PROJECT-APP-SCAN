@@ -1306,10 +1306,14 @@ if (btnSyncUsersToFirebase) {
     } catch (e) {
       console.warn('Firebase sync notice:', e);
       const errMsg = String(e.message || '');
-      if (errMsg.includes('Timeout') || errMsg.includes('permission') || errMsg.includes('PERMISSION_DENIED')) {
-        showStatus('⚠️ Firestore di Firebase Console belum aktif / Rules ditolak. Buka "📖 Tutorial Wajib" di atas untuk solusinya.', 'err');
+      const errCode = String(e.code || '');
+
+      if (errCode.includes('permission-denied') || errMsg.includes('permission') || errMsg.includes('PERMISSION_DENIED')) {
+        showStatus('⚠️ Akses Ditolak (Permission Denied): Anda perlu mengeklik tombol "Publish" (Publikasikan) di bagian atas editor Rules Firebase Console.', 'err');
+      } else if (errMsg.includes('Timeout')) {
+        showStatus('⚠️ Koneksi Firestore Timeout: Pastikan "Firestore Database" sudah dibuat (Create Database) & tombol "Publish" sudah diklik.', 'err');
       } else {
-        showStatus('Gagal menyinkronkan akun: ' + errMsg, 'err');
+        showStatus('Gagal menyinkronkan akun: ' + (errMsg || errCode || 'Terjadi kendala jaringan'), 'err');
       }
     } finally {
       if (btnSyncUsersToFirebase) {
