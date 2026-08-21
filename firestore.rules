@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Koleksi log inspeksi APAR
+    match /apar_log/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 2. Koleksi daftar akun petugas & admin
+    match /users/{document=**} {
+      allow read, write: if true;
+    }
+
+    // 3. Fallback aturan umum untuk semua koleksi
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

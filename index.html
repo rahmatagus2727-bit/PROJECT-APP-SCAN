@@ -302,26 +302,32 @@
             <!-- Collapsible Tutorial Firebase Rules -->
             <div style="margin-top: 14px; padding: 12px; background: rgba(30, 41, 59, 0.6); border: 1px dashed var(--border); border-radius: 8px;">
               <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="document.getElementById('firebaseRulesGuide').classList.toggle('hidden');">
-                <span style="font-size: 0.82rem; font-weight: 600; color: #38bdf8;">📖 Tutorial Wajib Pengaturan Firebase</span>
+                <span style="font-size: 0.82rem; font-weight: 600; color: #38bdf8;">📖 Tutorial Wajib Pengaturan Firebase Rules</span>
                 <span style="font-size: 0.75rem; color: var(--text-muted);">Klik Buka/Tutup</span>
               </div>
               <div id="firebaseRulesGuide" class="hidden" style="margin-top: 10px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5;">
-                <p style="margin: 0 0 6px 0; color: var(--text-main);"><strong>Langkah Setting di Firebase Console (Hanya 1x):</strong></p>
+                <p style="margin: 0 0 6px 0; color: var(--text-main);"><strong>Langkah Setting Rules di Firebase Console (Hanya 1x):</strong></p>
                 <ol style="padding-left: 18px; margin: 0 0 8px 0;">
                   <li>Buka <a href="https://console.firebase.google.com" target="_blank" style="color:#38bdf8;">console.firebase.google.com</a> &gt; Pilih project <b>apar-fss</b>.</li>
-                  <li>Di menu kiri: <b>Build</b> &gt; <b>Firestore Database</b> &gt; Klik <b>Create database</b> (Pilih Region: <i>asia-southeast2 / Jakarta</i>).</li>
-                  <li>Buka tab <b>Rules (Aturan)</b> di bagian atas Firestore Database.</li>
-                  <li>Ubah aturannya menjadi seperti di bawah ini, lalu klik <b>Publish (Publikasikan)</b>:</li>
+                  <li>Di menu kiri: <b>Build</b> &gt; <b>Firestore Database</b>. (Jika belum ada, klik <b>Create database</b> dulu).</li>
+                  <li>Buka tab <b>Rules (Aturan)</b> di bagian atas.</li>
+                  <li>Hapus aturan lama, lalu tempel (*paste*) aturan berikut:</li>
                 </ol>
                 <pre style="background:#0f172a; padding:8px; border-radius:6px; font-size:0.72rem; color:#4ade80; overflow-x:auto; margin:0 0 6px 0;">rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /apar_log/{document=**} {
+      allow read, write: if true;
+    }
+    match /users/{document=**} {
+      allow read, write: if true;
+    }
     match /{document=**} {
       allow read, write: if true;
     }
   }
 }</pre>
-                <span style="font-size:0.72rem; color:#f59e0b;">⚠️ Pastikan klik <b>Publish</b>. Jika masih error, tunggu 1-2 menit agar perubahan aktif.</span>
+                <span style="font-size:0.72rem; color:#f59e0b;">⚠️ Setelah di-paste, klik tombol <b>Publish (Publikasikan)</b> di kanan atas. Tunggu 30 detik lalu coba sinkronkan kembali.</span>
               </div>
             </div>
           </div>
