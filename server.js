@@ -665,7 +665,15 @@ app.get('/api/users', (req, res) => {
     return res.json({ success: true, users: [] });
   }
   try {
-    const resUsers = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users) AND lower(email) NOT IN (SELECT lower(email) FROM deleted_users) ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC");
+    const resUsers = sqliteDb.exec(`
+      SELECT id, email, name, password, role, created_at FROM users 
+      WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users WHERE id IS NOT NULL AND trim(id) != '')
+        AND (
+          email IS NULL OR trim(email) = '' OR 
+          lower(email) NOT IN (SELECT lower(email) FROM deleted_users WHERE email IS NOT NULL AND trim(email) != '')
+        )
+      ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC
+    `);
     if (!resUsers || !resUsers[0]) {
       return res.json({ success: true, users: [] });
     }
@@ -698,8 +706,8 @@ app.post('/api/users', (req, res) => {
   if (sqliteDb) {
     try {
       // Remove from deleted_users if re-creating
-      sqliteDb.run("DELETE FROM deleted_users WHERE lower(id) = ? OR lower(email) = ? OR lower(name) = ?", [
-        newId.toLowerCase(), cleanEmail, cleanName.toLowerCase()
+      sqliteDb.run("DELETE FROM deleted_users WHERE lower(id) = ? OR (email IS NOT NULL AND lower(email) = ?)", [
+        newId.toLowerCase(), cleanEmail
       ]);
 
       sqliteDb.run("INSERT OR REPLACE INTO users (id, email, name, password, role) VALUES (?, ?, ?, ?, ?)", [
@@ -709,7 +717,7 @@ app.post('/api/users', (req, res) => {
 
       // Update USERS_FILE
       try {
-        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users)");
+        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users WHERE id IS NOT NULL AND trim(id) != '')");
         if (all && all[0]) {
           const list = all[0].values.map(([id, email, name, password, role, created_at]) => ({
             id, email, name, password, role, created_at
@@ -751,31 +759,33 @@ app.delete('/api/users/:id', (req, res) => {
 
   if (sqliteDb) {
     try {
-      let userEmail = cleanTarget;
+      let userEmail = '';
       let userName = cleanTarget;
 
       // Find details before deleting
-      const userRow = sqliteDb.exec("SELECT id, email, name FROM users WHERE lower(id) = ? OR lower(email) = ? OR lower(name) = ?", [cleanTarget, cleanTarget, cleanTarget]);
+      const userRow = sqliteDb.exec("SELECT id, email, name FROM users WHERE lower(id) = ? OR lower(email) = ?", [cleanTarget, cleanTarget]);
       if (userRow && userRow[0] && userRow[0].values && userRow[0].values.length > 0) {
         const [uId, uEm, uNm] = userRow[0].values[0];
-        if (uId) sqliteDb.run("INSERT OR REPLACE INTO deleted_users (id, email, name) VALUES (?, ?, ?)", [String(uId).toLowerCase(), String(uEm || '').toLowerCase(), String(uNm || '').toLowerCase()]);
         if (uEm) userEmail = String(uEm).toLowerCase().trim();
-        if (uNm) userName = String(uNm).toLowerCase().trim();
+        if (uNm) userName = String(uNm).trim();
+        sqliteDb.run("INSERT OR REPLACE INTO deleted_users (id, email, name) VALUES (?, ?, ?)", [
+          String(uId).toLowerCase(), userEmail, userName
+        ]);
+      } else {
+        sqliteDb.run("INSERT OR REPLACE INTO deleted_users (id, email, name) VALUES (?, ?, ?)", [
+          cleanTarget, '', userName
+        ]);
       }
 
-      sqliteDb.run("INSERT OR REPLACE INTO deleted_users (id, email, name) VALUES (?, ?, ?)", [
-        cleanTarget, userEmail, userName
-      ]);
-
-      sqliteDb.run("DELETE FROM users WHERE lower(id) = ? OR lower(email) = ? OR lower(name) = ?", [
-        cleanTarget, cleanTarget, cleanTarget
+      sqliteDb.run("DELETE FROM users WHERE lower(id) = ? OR lower(email) = ?", [
+        cleanTarget, cleanTarget
       ]);
 
       persistSqliteToDisk();
 
       // Update USERS_FILE
       try {
-        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users)");
+        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users WHERE id IS NOT NULL AND trim(id) != '')");
         if (all && all[0]) {
           const list = all[0].values.map(([id, email, name, password, role, created_at]) => ({
             id, email, name, password, role, created_at
@@ -863,8 +873,8 @@ app.post('/api/auth/login', (req, res) => {
     try {
       // 1. Check if user was deleted
       const isDeleted = sqliteDb.exec(
-        "SELECT id, name FROM deleted_users WHERE lower(id) = ? OR lower(email) = ? OR lower(name) = ?",
-        [cleanInput, cleanInput, cleanInput]
+        "SELECT id, name FROM deleted_users WHERE (id IS NOT NULL AND trim(id) != '' AND lower(id) = ?) OR (email IS NOT NULL AND trim(email) != '' AND lower(email) = ?)",
+        [cleanInput, cleanInput]
       );
       if (isDeleted && isDeleted[0] && isDeleted[0].values.length > 0) {
         return res.status(401).json({

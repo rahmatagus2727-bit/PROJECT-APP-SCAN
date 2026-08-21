@@ -1186,27 +1186,47 @@ if (btnTogglePassword && authPassword) {
 function getDeletedUsersSet() {
   try {
     const raw = localStorage.getItem('apar_deleted_users_set');
-    return raw ? new Set(JSON.parse(raw)) : new Set();
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(
+      Array.isArray(arr) 
+        ? arr.filter(x => typeof x === 'string' && x.trim().length > 0)
+        : []
+    );
   } catch (e) {
     return new Set();
   }
 }
 
-function addDeletedUserToSet(idOrNameOrEmail) {
-  if (!idOrNameOrEmail) return;
+function addDeletedUserToSet(idOrEmail) {
+  if (!idOrEmail || typeof idOrEmail !== 'string') return;
+  const clean = idOrEmail.trim().toLowerCase();
+  if (!clean) return;
   try {
     const s = getDeletedUsersSet();
-    s.add(String(idOrNameOrEmail).toLowerCase().trim());
+    s.add(clean);
     localStorage.setItem('apar_deleted_users_set', JSON.stringify(Array.from(s)));
   } catch (e) {}
 }
 
-function isUserDeleted(id, email, name) {
+function removeDeletedUserFromSet(idOrEmail) {
+  if (!idOrEmail || typeof idOrEmail !== 'string') return;
+  const clean = idOrEmail.trim().toLowerCase();
+  if (!clean) return;
+  try {
+    const s = getDeletedUsersSet();
+    s.delete(clean);
+    localStorage.setItem('apar_deleted_users_set', JSON.stringify(Array.from(s)));
+  } catch (e) {}
+}
+
+function isUserDeleted(id, email) {
   const s = getDeletedUsersSet();
   const cId = id ? String(id).toLowerCase().trim() : '';
   const cEm = email ? String(email).toLowerCase().trim() : '';
-  const cNm = name ? String(name).toLowerCase().trim() : '';
-  return (cId && s.has(cId)) || (cEm && s.has(cEm)) || (cNm && s.has(cNm));
+
+  if (cId === 'user_admin' || cEm === 'admin@apar.id' || cId === 'admin') return false;
+
+  return (cId && s.has(cId)) || (cEm && s.has(cEm));
 }
 
 async function checkFirestoreUserLogin(identifier, password) {
@@ -1511,50 +1531,17 @@ window.toggleUserPass = function(userId) {
 
 async function verifyActiveUserSession() {
   if (!currentUser) return;
-  if (currentUser.id === 'user_admin' || currentUser.email === 'admin@apar.id') return;
+  if (currentUser.id === 'user_admin' || currentUser.email === 'admin@apar.id' || currentUser.role === 'admin') return;
 
   const curId = String(currentUser.id || '').trim().toLowerCase();
   const curEmail = String(currentUser.email || '').trim().toLowerCase();
-  const curName = String(currentUser.name || '').trim().toLowerCase();
 
-  // Check local deleted set
-  if (isUserDeleted(curId, curEmail, curName)) {
+  // ONLY log out if current user's ID or Email is explicitly marked as deleted in local/cloud set
+  if (isUserDeleted(curId, curEmail)) {
     const oldName = currentUser.name || currentUser.email || 'Petugas';
     showAuthScreen();
     alert(`⚠️ AKUN TIDAK TERSEDIA!\n\nAkun Anda ("${oldName}") telah dihapus oleh Administrator K3.\n\nSesi login Anda telah diakhiri secara otomatis.`);
     showStatus(`⚠️ Akun "${oldName}" telah dihapus oleh Admin K3. Sesi login diakhiri.`, 'err');
-    return;
-  }
-
-  let activeUsers = cachedAdminUsers || [];
-
-  try {
-    const res = await fetch('/api/users');
-    if (res.ok) {
-      const data = await res.json();
-      if (data && Array.isArray(data.users)) {
-        activeUsers = data.users;
-        cachedAdminUsers = data.users.filter(u => !isUserDeleted(u.id, u.email, u.name));
-        try { localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers)); } catch (e) {}
-      }
-    }
-  } catch (e) {}
-
-  if (activeUsers) {
-    const exists = activeUsers.some(u => {
-      const uId = String(u.id || '').trim().toLowerCase();
-      const uEmail = String(u.email || '').trim().toLowerCase();
-      const uName = String(u.name || '').trim().toLowerCase();
-      if (isUserDeleted(uId, uEmail, uName)) return false;
-      return uId === curId || (curEmail && uEmail === curEmail) || (curName && uName === curName);
-    });
-
-    if (!exists) {
-      const oldName = currentUser.name || currentUser.email || 'Petugas';
-      showAuthScreen();
-      alert(`⚠️ AKUN TIDAK TERSEDIA!\n\nAkun Anda ("${oldName}") telah dihapus oleh Administrator K3.\n\nSesi login Anda telah diakhiri secara otomatis.`);
-      showStatus(`⚠️ Akun "${oldName}" telah dihapus oleh Admin K3. Sesi login diakhiri.`, 'err');
-    }
   }
 }
 
@@ -1566,18 +1553,17 @@ window.addEventListener('storage', (e) => {
   if (e.key === 'apar_deleted_user_event' && e.newValue) {
     try {
       const data = JSON.parse(e.newValue);
-      if (data && (data.userId || data.userName) && currentUser) {
+      if (data && currentUser) {
         const targetIdStr = String(data.userId || '').trim().toLowerCase();
-        const targetNameStr = String(data.userName || '').trim().toLowerCase();
+        const targetEmailStr = String(data.userEmail || '').trim().toLowerCase();
 
-        addDeletedUserToSet(targetIdStr);
-        if (targetNameStr) addDeletedUserToSet(targetNameStr);
+        if (targetIdStr) addDeletedUserToSet(targetIdStr);
+        if (targetEmailStr) addDeletedUserToSet(targetEmailStr);
 
         const curId = String(currentUser.id || '').trim().toLowerCase();
         const curEmail = String(currentUser.email || '').trim().toLowerCase();
-        const curName = String(currentUser.name || '').trim().toLowerCase();
 
-        if (curId === targetIdStr || curEmail === targetIdStr || curName === targetNameStr || isUserDeleted(curId, curEmail, curName)) {
+        if ((curId && curId === targetIdStr) || (curEmail && curEmail === targetEmailStr) || isUserDeleted(curId, curEmail)) {
           const name = currentUser.name || currentUser.email;
           showAuthScreen();
           alert(`⚠️ AKUN DIHAPUS!\n\nAkun Anda ("${name}") telah dihapus oleh Admin K3.\n\nSesi login Anda telah diakhiri secara otomatis.`);
@@ -1599,7 +1585,7 @@ async function loadAdminUserList() {
     if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (data && Array.isArray(data.users)) {
-        cachedAdminUsers = data.users.filter(u => !isUserDeleted(u.id, u.email, u.name));
+        cachedAdminUsers = data.users.filter(u => !isUserDeleted(u.id, u.email));
       }
     }
   } catch (e) {
@@ -1616,15 +1602,14 @@ async function loadAdminUserList() {
         if (u) {
           const uId = u.id || doc.id;
           const uEm = u.email || '';
-          const uNm = u.name || '';
-          if (!isUserDeleted(uId, uEm, uNm)) {
+          if (!isUserDeleted(uId, uEm)) {
             fsUsers.push({
               id: uId,
-              name: uNm || uEm,
+              name: u.name || uEm || uId,
               email: uEm,
               password: u.password || '123',
               role: u.role || 'petugas',
-              created_at: u.createdAt || u.syncedAt || new Date().toISOString()
+              created_at: u.createdAt || u.created_at || new Date().toISOString()
             });
           }
         }
@@ -1651,7 +1636,7 @@ async function loadAdminUserList() {
   if (!cachedAdminUsers || cachedAdminUsers.length === 0) {
     try {
       const local = JSON.parse(localStorage.getItem('apar_all_users') || '[]');
-      const filteredLocal = (local || []).filter(u => !isUserDeleted(u.id, u.email, u.name));
+      const filteredLocal = (local || []).filter(u => !isUserDeleted(u.id, u.email));
       if (filteredLocal && filteredLocal.length) {
         cachedAdminUsers = filteredLocal;
       } else {
@@ -1661,7 +1646,7 @@ async function loadAdminUserList() {
       cachedAdminUsers = getDefaultUsersList();
     }
   } else {
-    cachedAdminUsers = cachedAdminUsers.filter(u => !isUserDeleted(u.id, u.email, u.name));
+    cachedAdminUsers = cachedAdminUsers.filter(u => !isUserDeleted(u.id, u.email));
   }
 
   try {
@@ -1676,7 +1661,7 @@ function renderAdminUserList() {
   if (!adminUserList) return;
   const q = searchAdminUsers ? searchAdminUsers.value.trim().toLowerCase() : '';
   const filtered = (cachedAdminUsers || []).filter(u => {
-    if (isUserDeleted(u.id, u.email, u.name)) return false;
+    if (isUserDeleted(u.id, u.email)) return false;
     if (!q) return true;
     return (u.name && u.name.toLowerCase().includes(q)) ||
            (u.email && u.email.toLowerCase().includes(q)) ||
@@ -1692,6 +1677,8 @@ function renderAdminUserList() {
     return;
   }
 
+  const logsList = Object.values(LOG || {});
+
   adminUserList.innerHTML = filtered.map(u => {
     const isAdmin = (u.role === 'admin' || u.id === 'user_admin');
     const isMainAdmin = (u.id === 'user_admin' || u.email === 'admin@apar.id');
@@ -1699,6 +1686,19 @@ function renderAdminUserList() {
     const initials = isAdmin ? '👑' : ((u.name || 'P').trim().split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'P');
     const createdStr = u.created_at ? new Date(u.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Aktif';
     const displayPass = u.password || '123';
+
+    // Count APAR inspected by this user
+    const userDoneCount = logsList.filter(entry => {
+      if (!entry) return false;
+      const p = String(entry.pemeriksa || '').trim().toLowerCase();
+      const pid = String(entry.pemeriksa_id || '').trim().toLowerCase();
+      const pem = String(entry.pemeriksa_email || '').trim().toLowerCase();
+      const uId = String(u.id || '').trim().toLowerCase();
+      const uEmail = String(u.email || '').trim().toLowerCase();
+      const uName = String(u.name || '').trim().toLowerCase();
+
+      return (uId && pid === uId) || (uEmail && pem === uEmail) || (uName && p === uName) || (uEmail && p === uEmail);
+    }).length;
 
     return `
       <div class="user-item-card" data-id="${escapeHtml(u.id)}">
@@ -1715,6 +1715,8 @@ function renderAdminUserList() {
             
             <div class="user-item-sub">
               <span>🆔 <b>${escapeHtml(u.email || u.id)}</b></span>
+              <span>•</span>
+              <span style="color:#4ade80; font-weight:600;">🔍 <b>${userDoneCount}</b> APAR Diperiksa</span>
               <span>•</span>
               <span>📅 ${escapeHtml(createdStr)}</span>
             </div>
@@ -1734,7 +1736,7 @@ function renderAdminUserList() {
           ${isMainAdmin ? `
             <span style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.05); padding:4px 10px; border-radius:6px; border:1px solid var(--border);">Utama</span>
           ` : `
-            <button type="button" class="btn-delete-user" onclick="handleDeleteUser('${escapeHtml(u.id)}', '${escapeHtml(u.name)}')">
+            <button type="button" class="btn-delete-user" onclick="handleDeleteUser('${escapeHtml(u.id)}', '${escapeHtml(u.name)}', '${escapeHtml(u.email)}')">
               🗑️ Hapus Akun
             </button>
           `}
@@ -1778,13 +1780,10 @@ if (formAdminAddUser) {
 
     try {
       // Clear deleted status if re-creating
-      addDeletedUserToSet(''); // nop call
-      const s = getDeletedUsersSet();
-      s.delete(name.toLowerCase());
-      s.delete(email.toLowerCase());
-      localStorage.setItem('apar_deleted_users_set', JSON.stringify(Array.from(s)));
+      removeDeletedUserFromSet(newUserObj.id);
+      removeDeletedUserFromSet(email);
 
-      // 1. Save to Backend Server with short timeout (max 3s)
+      // 1. Save to Backend Server with short timeout
       try {
         const fetchController = new AbortController();
         const timeoutId = setTimeout(() => fetchController.abort(), 3000);
@@ -1814,11 +1813,11 @@ if (formAdminAddUser) {
         localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
       } catch (e) {}
 
-      // 3. Optional sync to Firebase Firestore (includes password for multi-device login)
+      // 3. Save & Sync to Firebase Firestore
       if (db && isFirebaseConfigured()) {
         try {
           const docId = String(newUserObj.id || email).replace(/[^a-zA-Z0-9_-]/g, '_');
-          const savePromise = db.collection('users').doc(docId).set({
+          await db.collection('users').doc(docId).set({
             id: newUserObj.id,
             name: newUserObj.name,
             email: newUserObj.email,
@@ -1827,10 +1826,12 @@ if (formAdminAddUser) {
             createdAt: new Date().toISOString()
           }, { merge: true });
 
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Firestore timeout')), 15000)
-          );
-          await Promise.race([savePromise, timeoutPromise]);
+          // Also remove from Firestore deleted_users collection if exists
+          await db.collection('deleted_users').doc(docId).delete().catch(() => {});
+          if (email) {
+            const emailDocId = String(email).replace(/[^a-zA-Z0-9_-]/g, '_');
+            await db.collection('deleted_users').doc(emailDocId).delete().catch(() => {});
+          }
         } catch (fbErr) {
           console.warn('Firestore user save notice:', fbErr);
         }
@@ -1858,17 +1859,18 @@ if (formAdminAddUser) {
 }
 
 // Delete User Handler (Admin Only)
-window.handleDeleteUser = async function(userId, userName) {
+window.handleDeleteUser = async function(userId, userName, userEmail) {
   if (!userId) return;
-  const isConfirmed = confirm(`Apakah Anda yakin ingin menghapus akun petugas "${userName}"?`);
+  const displayName = userName || userEmail || userId;
+  const isConfirmed = confirm(`Apakah Anda yakin ingin menghapus akun petugas "${displayName}"?`);
   if (!isConfirmed) return;
 
   const targetIdStr = String(userId).trim().toLowerCase();
-  const targetNameStr = String(userName || '').trim().toLowerCase();
+  const targetEmailStr = String(userEmail || '').trim().toLowerCase();
 
   // Mark as deleted in local set
-  addDeletedUserToSet(targetIdStr);
-  if (targetNameStr) addDeletedUserToSet(targetNameStr);
+  if (targetIdStr) addDeletedUserToSet(targetIdStr);
+  if (targetEmailStr) addDeletedUserToSet(targetEmailStr);
 
   // 1. Delete from Backend Server SQLite
   try {
@@ -1884,40 +1886,52 @@ window.handleDeleteUser = async function(userId, userName) {
   // 2. Delete from Local Cache & Storage
   cachedAdminUsers = cachedAdminUsers.filter(u => 
     String(u.id || '').trim().toLowerCase() !== targetIdStr && 
-    String(u.email || '').trim().toLowerCase() !== targetIdStr &&
-    String(u.name || '').trim().toLowerCase() !== targetNameStr
+    (targetEmailStr ? String(u.email || '').trim().toLowerCase() !== targetEmailStr : true)
   );
   try {
     localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
     // Dispatch cross-tab logout signal
-    localStorage.setItem('apar_deleted_user_event', JSON.stringify({ userId, userName, timestamp: Date.now() }));
+    localStorage.setItem('apar_deleted_user_event', JSON.stringify({ 
+      userId: targetIdStr, 
+      userEmail: targetEmailStr,
+      userName: displayName, 
+      timestamp: Date.now() 
+    }));
   } catch (e) {}
 
-  // 3. Delete from Firestore if active
+  // 3. Sync deletion to Firebase Firestore
   if (db && isFirebaseConfigured()) {
     try {
       const docId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const delPromise = db.collection('users').doc(docId).delete();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Firestore timeout')), 10000)
-      );
-      await Promise.race([delPromise, timeoutPromise]);
-    } catch (e) {}
+      await db.collection('users').doc(docId).delete().catch(() => {});
+      if (userEmail) {
+        const emailDocId = String(userEmail).replace(/[^a-zA-Z0-9_-]/g, '_');
+        await db.collection('users').doc(emailDocId).delete().catch(() => {});
+      }
+
+      // Track in Firestore deleted_users collection for multi-device sync
+      await db.collection('deleted_users').doc(docId).set({
+        id: targetIdStr,
+        email: targetEmailStr,
+        deletedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Firestore user deletion sync notice:', e);
+    }
   }
 
-  showStatus(`🗑️ Akun "${userName}" berhasil dihapus.`, 'ok');
+  showStatus(`🗑️ Akun "${displayName}" berhasil dihapus.`, 'ok');
   renderAdminUserList();
 
   // 4. Auto-logout if deleted user is current user
   if (currentUser) {
     const curId = String(currentUser.id || '').trim().toLowerCase();
     const curEmail = String(currentUser.email || '').trim().toLowerCase();
-    const curName = String(currentUser.name || '').trim().toLowerCase();
 
-    if (curId === targetIdStr || curEmail === targetIdStr || curName === targetNameStr || isUserDeleted(curId, curEmail, curName)) {
+    if ((curId && curId === targetIdStr) || (curEmail && curEmail === targetEmailStr) || isUserDeleted(curId, curEmail)) {
       showAuthScreen();
-      alert(`⚠️ AKUN DIHAPUS!\n\nAkun Anda ("${userName}") telah dihapus. Sesi login Anda telah diakhiri secara otomatis.`);
-      showStatus(`Akun "${userName}" telah dihapus. Sesi login diakhiri.`, 'err');
+      alert(`⚠️ AKUN DIHAPUS!\n\nAkun Anda ("${displayName}") telah dihapus. Sesi login Anda telah diakhiri secara otomatis.`);
+      showStatus(`Akun "${displayName}" telah dihapus. Sesi login diakhiri.`, 'err');
     }
   }
 };
