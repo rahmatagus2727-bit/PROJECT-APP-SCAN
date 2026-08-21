@@ -24,6 +24,13 @@ const SQLITE_FILE = path.join(DATA_DIR, 'apar_database.sqlite');
 const LOG_FILE = path.join(DATA_DIR, 'apar_log.json');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+const ARCHIVES_FILE = path.join(DATA_DIR, 'period_archives.json');
+
+// Indonesian Month Names
+const MONTH_NAMES_ID = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+];
 
 // -------------------------------------------------------------
 // Initialize SQLite Database Engine (sql.js) with Auto-Healing
@@ -55,6 +62,19 @@ function createTables(db) {
       tanggal TEXT,
       raw_json TEXT,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS period_archives (
+      id TEXT PRIMARY KEY,
+      period_key TEXT UNIQUE,
+      period_label TEXT,
+      total_items INTEGER DEFAULT 0,
+      good_items INTEGER DEFAULT 0,
+      bad_items INTEGER DEFAULT 0,
+      raw_data TEXT,
+      gdrive_sheet_url TEXT,
+      archived_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      archived_by TEXT
     );
 
     CREATE TABLE IF NOT EXISTS users (
@@ -437,7 +457,7 @@ function getAllInspectionsFromSqlite() {
 }
 
 // -------------------------------------------------------------
-// Settings
+// Settings & Monthly Cycle Configuration
 // -------------------------------------------------------------
 function loadSettingsFromFile() {
   try {
@@ -446,7 +466,7 @@ function loadSettingsFromFile() {
       return JSON.parse(raw) || {};
     }
   } catch (err) {}
-  return { googleScriptUrl: '', autoSyncGdrive: false };
+  return { googleScriptUrl: '', autoSyncGdrive: false, autoCycleOnComplete: true };
 }
 
 function saveSettingsToFile(settings) {
@@ -456,6 +476,254 @@ function saveSettingsToFile(settings) {
 }
 
 let APP_SETTINGS = loadSettingsFromFile();
+
+// Helper: Get Current Period Information & Deadline
+function getCurrentPeriodInfo() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const monthIdx = now.getMonth();
+  const monthNum = String(monthIdx + 1).padStart(2, '0');
+  const monthName = MONTH_NAMES_ID[monthIdx];
+  const defPeriodKey = `${year}-${monthNum}`;
+  const defPeriodLabel = `${monthName} ${year}`;
+
+  const activeKey = APP_SETTINGS.activePeriodKey || defPeriodKey;
+  const activeLabel = APP_SETTINGS.activePeriodLabel || defPeriodLabel;
+
+  let targetYear = year;
+  let targetMonthNum = monthIdx + 1;
+  if (activeKey && activeKey.includes('-')) {
+    const [y, m] = activeKey.split('-').map(Number);
+    if (y && m) {
+      targetYear = y;
+      targetMonthNum = m;
+    }
+  }
+
+  const lastDay = new Date(targetYear, targetMonthNum, 0).getDate();
+  const targetMonthName = MONTH_NAMES_ID[targetMonthNum - 1] || monthName;
+  const deadlineStr = `${lastDay} ${targetMonthName} ${targetYear}`;
+
+  const today = new Date();
+  const deadlineDate = new Date(targetYear, targetMonthNum - 1, lastDay, 23, 59, 59);
+  const diffMs = deadlineDate.getTime() - today.getTime();
+  const daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  const isNearDeadline = daysRemaining <= 5;
+
+  return {
+    activePeriodKey: activeKey,
+    activePeriodLabel: activeLabel,
+    year: targetYear,
+    monthName: targetMonthName,
+    monthNum: targetMonthNum,
+    deadlineDate: deadlineStr,
+    daysRemaining,
+    isNearDeadline,
+    autoCycleOnComplete: APP_SETTINGS.autoCycleOnComplete !== false
+  };
+}
+
+function computeNextPeriod(currentPeriodKey) {
+  let [y, m] = (currentPeriodKey || '').split('-').map(Number);
+  if (!y || !m) {
+    const now = new Date();
+    y = now.getFullYear();
+    m = now.getMonth() + 1;
+  }
+  m += 1;
+  if (m > 12) {
+    m = 1;
+    y += 1;
+  }
+  const monthIdx = m - 1;
+  const monthNum = String(m).padStart(2, '0');
+  const monthName = MONTH_NAMES_ID[monthIdx];
+  const nextKey = `${y}-${monthNum}`;
+  const nextLabel = `${monthName} ${y}`;
+  const lastDay = new Date(y, m, 0).getDate();
+  return {
+    periodKey: nextKey,
+    periodLabel: nextLabel,
+    year: y,
+    monthName,
+    monthNum: m,
+    deadlineDate: `${lastDay} ${monthName} ${y}`
+  };
+}
+
+function getAllPeriodArchivesFromSqlite() {
+  if (!sqliteDb) {
+    if (fs.existsSync(ARCHIVES_FILE)) {
+      try { return JSON.parse(fs.readFileSync(ARCHIVES_FILE, 'utf-8')) || []; } catch (e) {}
+    }
+    return [];
+  }
+  try {
+    const res = sqliteDb.exec(`SELECT id, period_key, period_label, total_items, good_items, bad_items, raw_data, gdrive_sheet_url, archived_at, archived_by FROM period_archives ORDER BY datetime(archived_at) DESC`);
+    if (!res || !res[0]) {
+      if (fs.existsSync(ARCHIVES_FILE)) {
+        try { return JSON.parse(fs.readFileSync(ARCHIVES_FILE, 'utf-8')) || []; } catch (e) {}
+      }
+      return [];
+    }
+    const cols = res[0].columns;
+    const list = res[0].values.map(row => {
+      const obj = {};
+      cols.forEach((col, idx) => {
+        obj[col] = row[idx];
+      });
+      return obj;
+    });
+    return list;
+  } catch (e) {
+    console.warn('Error querying period archives:', e);
+    return [];
+  }
+}
+
+async function archiveCurrentPeriodAndStartNext(triggeredBy = 'Sistem', customNextKey = null) {
+  const currentInfo = getCurrentPeriodInfo();
+  const currentLogs = getAllInspectionsFromSqlite();
+  const logValues = Object.values(currentLogs);
+  const totalItems = logValues.length;
+  
+  let goodItems = 0;
+  let badItems = 0;
+  logValues.forEach(item => {
+    if (item.status === 'OK' || item.status === 'good') goodItems++;
+    else badItems++;
+  });
+
+  const nextInfo = customNextKey ? {
+    periodKey: customNextKey,
+    periodLabel: customNextKey
+  } : computeNextPeriod(currentInfo.activePeriodKey);
+
+  const archiveId = `archive_${currentInfo.activePeriodKey}_${Date.now()}`;
+  const rawDataJson = JSON.stringify(currentLogs);
+  const nowIso = new Date().toISOString();
+
+  // Save to SQLite archives
+  if (sqliteDb) {
+    try {
+      sqliteDb.run(`
+        INSERT OR REPLACE INTO period_archives (
+          id, period_key, period_label, total_items, good_items, bad_items, raw_data, archived_at, archived_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        archiveId,
+        currentInfo.activePeriodKey,
+        currentInfo.activePeriodLabel,
+        totalItems,
+        goodItems,
+        badItems,
+        rawDataJson,
+        nowIso,
+        triggeredBy
+      ]);
+
+      // Reset active inspections in SQLite so the new month starts completely fresh (0 progress)
+      sqliteDb.run("DELETE FROM inspections");
+
+      // Log to audit table
+      sqliteDb.run(`
+        INSERT INTO audit_logs (action, details, pemeriksa)
+        VALUES ('PERIOD_ARCHIVED_AND_CYCLED', ?, ?)
+      `, [
+        `Periode ${currentInfo.activePeriodLabel} diarsipkan (${totalItems} APAR). Memulai periode baru ${nextInfo.periodLabel}.`,
+        triggeredBy
+      ]);
+
+      persistSqliteToDisk();
+    } catch (dbErr) {
+      console.error('Error archiving period in SQLite:', dbErr);
+    }
+  }
+
+  // Sync / Reset local JSON files
+  try {
+    let archivesList = [];
+    if (fs.existsSync(ARCHIVES_FILE)) {
+      try { archivesList = JSON.parse(fs.readFileSync(ARCHIVES_FILE, 'utf-8')) || []; } catch (e) {}
+    }
+    archivesList = archivesList.filter(a => a.period_key !== currentInfo.activePeriodKey);
+    archivesList.unshift({
+      id: archiveId,
+      period_key: currentInfo.activePeriodKey,
+      period_label: currentInfo.activePeriodLabel,
+      total_items: totalItems,
+      good_items: goodItems,
+      bad_items: badItems,
+      archived_at: nowIso,
+      archived_by: triggeredBy
+    });
+    fs.writeFileSync(ARCHIVES_FILE, JSON.stringify(archivesList, null, 2), 'utf-8');
+
+    // Reset current active log JSON
+    fs.writeFileSync(LOG_FILE, '{}', 'utf-8');
+  } catch (fsErr) {
+    console.warn('JSON file archive sync notice:', fsErr);
+  }
+
+  // Update Settings to next period
+  APP_SETTINGS.activePeriodKey = nextInfo.periodKey;
+  APP_SETTINGS.activePeriodLabel = nextInfo.periodLabel;
+  saveSettingsToFile(APP_SETTINGS);
+
+  // Add system notification
+  const cycleNotif = addNotificationToSqlite({
+    type: 'period_cycled',
+    title: `🎉 Periode Baru Dimulai: ${nextInfo.periodLabel}`,
+    message: `Periode ${currentInfo.activePeriodLabel} telah berhasil diselesaikan & diarsipkan (${totalItems} APAR). Siklus tugas checklist telah di-refresh untuk ${nextInfo.periodLabel} (Tenggat: ${nextInfo.deadlineDate || 'Akhir Bulan'}).`,
+    kode: 'CYCLE',
+    pemeriksa: triggeredBy,
+    details: JSON.stringify({
+      archivedPeriod: currentInfo.activePeriodLabel,
+      newPeriod: nextInfo.periodLabel,
+      totalArchived: totalItems
+    })
+  });
+
+  // Sync to Google Apps Script (create new sheet tab for next month & archive current month)
+  const targetScriptUrl = APP_SETTINGS.googleScriptUrl || '';
+  if (targetScriptUrl && targetScriptUrl.startsWith('http')) {
+    callGoogleAppsScript(targetScriptUrl, {
+      action: 'archive_month',
+      periodLabel: currentInfo.activePeriodLabel,
+      periodKey: currentInfo.activePeriodKey,
+      nextPeriodLabel: nextInfo.periodLabel,
+      nextPeriodKey: nextInfo.periodKey,
+      totalItems: totalItems,
+      items: logValues
+    }).catch(gasErr => {
+      console.warn('GAS Archive month webhook notice:', gasErr.message);
+    });
+  }
+
+  // Real-time broadcast to all connected devices
+  broadcastUpdate({
+    type: 'period_cycled',
+    archivedPeriod: {
+      key: currentInfo.activePeriodKey,
+      label: currentInfo.activePeriodLabel,
+      totalItems
+    },
+    newPeriod: {
+      key: nextInfo.periodKey,
+      label: nextInfo.periodLabel,
+      deadlineDate: nextInfo.deadlineDate
+    },
+    notification: cycleNotif,
+    timestamp: Date.now()
+  });
+
+  return {
+    success: true,
+    archivedPeriod: currentInfo,
+    newPeriod: nextInfo,
+    totalArchived: totalItems
+  };
+}
 
 // List of connected SSE clients for instant broadcast
 let sseClients = [];
@@ -551,14 +819,16 @@ app.get('/api/apar_log/events', (req, res) => {
   const logs = getAllInspectionsFromSqlite();
   const notifs = getRecentNotificationsFromSqlite(30);
   const unreadCount = getUnreadNotificationCount();
+  const periodInfo = getCurrentPeriodInfo();
 
-  // Send initial snapshot with inspections and notifications
+  // Send initial snapshot with inspections, notifications, and period cycle info
   const initialPayload = {
     type: 'init',
     count: Object.keys(logs).length,
     logs: logs,
     notifications: notifs,
     unreadCount: unreadCount,
+    period: periodInfo,
     timestamp: Date.now()
   };
   res.write(`data: ${JSON.stringify(initialPayload)}\n\n`);
@@ -676,9 +946,15 @@ app.post('/api/apar_log', (req, res) => {
   // Background Automatic Sync to Google Sheets & Drive (Single Centralized Database)
   const targetScriptUrl = APP_SETTINGS.googleScriptUrl || '';
   if (targetScriptUrl && targetScriptUrl.startsWith('http')) {
-    callGoogleAppsScript(targetScriptUrl, entry)
+    const periodInfo = getCurrentPeriodInfo();
+    const gasPayload = {
+      ...entry,
+      periodLabel: entry.periodLabel || periodInfo.activePeriodLabel,
+      periodKey: entry.periodKey || periodInfo.activePeriodKey
+    };
+    callGoogleAppsScript(targetScriptUrl, gasPayload)
       .then(gasRes => {
-        console.log(`⚡ Auto-synced inspection ${docId} to Google Sheets. OK:`, gasRes.ok);
+        console.log(`⚡ Auto-synced inspection ${docId} to Google Sheets (${gasPayload.periodLabel}). OK:`, gasRes.ok);
       })
       .catch(gasErr => {
         console.warn(`⚠️ Background Google Sheets sync error for ${docId}:`, gasErr.message);
@@ -769,6 +1045,122 @@ app.delete('/api/apar_log', (req, res) => {
 
   broadcastUpdate({ type: 'reset', notification: resetNotif, timestamp: Date.now() });
   res.json({ success: true, message: 'Semua log SQLite berhasil direset.', notification: resetNotif });
+});
+
+// -------------------------------------------------------------
+// Period & Monthly Task Cycling Endpoints
+// -------------------------------------------------------------
+app.get('/api/periods', (req, res) => {
+  const currentInfo = getCurrentPeriodInfo();
+  const archives = getAllPeriodArchivesFromSqlite();
+  const activeLogs = getAllInspectionsFromSqlite();
+  const totalActive = Object.keys(activeLogs).length;
+
+  res.json({
+    success: true,
+    activePeriod: currentInfo,
+    totalActive,
+    archives: archives.map(a => ({
+      id: a.id,
+      period_key: a.period_key,
+      period_label: a.period_label,
+      total_items: a.total_items,
+      good_items: a.good_items,
+      bad_items: a.bad_items,
+      archived_at: a.archived_at,
+      archived_by: a.archived_by
+    }))
+  });
+});
+
+app.post('/api/periods/next', async (req, res) => {
+  const triggeredBy = req.body?.triggeredBy || req.body?.pemeriksa || 'Admin K3';
+  const customNextKey = req.body?.customNextKey || null;
+
+  try {
+    const cycleResult = await archiveCurrentPeriodAndStartNext(triggeredBy, customNextKey);
+    res.json({
+      success: true,
+      message: `Periode ${cycleResult.archivedPeriod.activePeriodLabel} berhasil diarsipkan. Siklus baru untuk ${cycleResult.newPeriod.periodLabel} siap digunakan!`,
+      data: cycleResult
+    });
+  } catch (err) {
+    console.error('Error cycling period:', err);
+    res.status(500).json({ success: false, message: 'Gagal menyelesaikan siklus periode: ' + err.message });
+  }
+});
+
+app.get('/api/periods/archive/:periodKey', (req, res) => {
+  const periodKey = req.params.periodKey;
+  if (!periodKey) {
+    return res.status(400).json({ success: false, message: 'Period key wajib disertakan.' });
+  }
+
+  let foundArchive = null;
+  if (sqliteDb) {
+    try {
+      const result = sqliteDb.exec("SELECT id, period_key, period_label, total_items, good_items, bad_items, raw_data, archived_at, archived_by FROM period_archives WHERE period_key = ? OR id = ?", [periodKey, periodKey]);
+      if (result && result[0] && result[0].values[0]) {
+        const row = result[0].values[0];
+        let rawData = {};
+        try { rawData = JSON.parse(row[6]); } catch (e) {}
+        foundArchive = {
+          id: row[0],
+          period_key: row[1],
+          period_label: row[2],
+          total_items: row[3],
+          good_items: row[4],
+          bad_items: row[5],
+          data: rawData,
+          archived_at: row[7],
+          archived_by: row[8]
+        };
+      }
+    } catch (e) {
+      console.warn('Archive query error:', e);
+    }
+  }
+
+  if (!foundArchive && fs.existsSync(ARCHIVES_FILE)) {
+    try {
+      const archives = JSON.parse(fs.readFileSync(ARCHIVES_FILE, 'utf-8')) || [];
+      const match = archives.find(a => a.period_key === periodKey || a.id === periodKey);
+      if (match) {
+        foundArchive = match;
+      }
+    } catch (e) {}
+  }
+
+  if (!foundArchive) {
+    return res.status(404).json({ success: false, message: `Arsip untuk periode ${periodKey} tidak ditemukan.` });
+  }
+
+  res.json({
+    success: true,
+    archive: foundArchive
+  });
+});
+
+app.post('/api/periods/config', (req, res) => {
+  const { activePeriodKey, activePeriodLabel, autoCycleOnComplete } = req.body || {};
+  if (activePeriodKey) APP_SETTINGS.activePeriodKey = activePeriodKey;
+  if (activePeriodLabel) APP_SETTINGS.activePeriodLabel = activePeriodLabel;
+  if (typeof autoCycleOnComplete === 'boolean') APP_SETTINGS.autoCycleOnComplete = autoCycleOnComplete;
+
+  saveSettingsToFile(APP_SETTINGS);
+
+  const currentInfo = getCurrentPeriodInfo();
+  broadcastUpdate({
+    type: 'period_config_updated',
+    period: currentInfo,
+    timestamp: Date.now()
+  });
+
+  res.json({
+    success: true,
+    message: 'Pengaturan periode berhasil diperbarui.',
+    period: currentInfo
+  });
 });
 
 // -------------------------------------------------------------
