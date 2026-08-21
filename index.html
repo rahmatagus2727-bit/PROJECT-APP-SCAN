@@ -321,7 +321,7 @@ service cloud.firestore {
     }
   }
 }</pre>
-                <span style="font-size:0.72rem; color:#f59e0b;">⚠️ Jika Firestore Database belum dibuat atau Rules ditolak, aplikasi akan otomatis beralih ke Database Server &amp; Cache Lokal sehingga sistem tetap berjalan lancar tanpa macet.</span>
+                <span style="font-size:0.72rem; color:#f59e0b;">⚠️ Pastikan klik <b>Publish</b>. Jika masih error, tunggu 1-2 menit agar perubahan aktif.</span>
               </div>
             </div>
           </div>
@@ -1141,7 +1141,7 @@ if (formAdminAddUser) {
           }, { merge: true });
 
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Firestore timeout')), 3000)
+            setTimeout(() => reject(new Error('Firestore timeout')), 15000)
           );
           await Promise.race([savePromise, timeoutPromise]);
         } catch (fbErr) {
@@ -1198,7 +1198,7 @@ window.handleDeleteUser = async function(userId, userName) {
       const docId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
       const delPromise = db.collection('users').doc(docId).delete();
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Firestore timeout')), 3000)
+        setTimeout(() => reject(new Error('Firestore timeout')), 15000)
       );
       await Promise.race([delPromise, timeoutPromise]);
     } catch (e) {}
@@ -1284,7 +1284,7 @@ if (btnSyncUsersToFirebase) {
 
       const commitPromise = batch.commit();
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Koneksi Firestore Timeout (Periksa Rules di Firebase Console)')), 4000)
+        setTimeout(() => reject(new Error('Koneksi Firestore Timeout (Koneksi lambat atau Rules ditolak)')), 15000)
       );
 
       await Promise.race([commitPromise, timeoutPromise]);
