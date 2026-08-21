@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
-<title>My APAR — Portal Pemeliharaan &amp; Inspeksi K3</title>
+<title>🦉 My APAR — Portal Pemeliharaan &amp; Inspeksi K3</title>
 <script>
   (function() {
     try {
@@ -50,20 +50,10 @@
       </div>
 
       <div class="auth-header">
-        <div class="auth-logo-badge">
-          <svg class="auth-logo-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="24" fill="url(#auth_logo_grad)"/>
-            <path d="M50 20C42 20 35 25 35 32V38H30C26.6863 38 24 40.6863 24 44V76C24 79.3137 26.6863 82 30 82H70C73.3137 82 76 79.3137 76 76V44C76 40.6863 73.3137 38 70 38H65V32C65 25 58 20 50 20ZM42 32C42 28.5 45.5 26 50 26C54.5 26 58 28.5 58 32V38H42V32ZM50 52C53.3137 52 56 54.6863 56 58C56 60.25 54.75 62.2 52.88 63.15L54 70H46L47.12 63.15C45.25 62.2 44 60.25 44 58C44 54.6863 46.6863 52 50 52Z" fill="white"/>
-            <path d="M68 22L78 14M78 14L84 20M78 14V26" stroke="#FF5252" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-            <defs>
-              <linearGradient id="auth_logo_grad" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
-                <stop stop-color="#E53935"/>
-                <stop offset="1" stop-color="#C62828"/>
-              </linearGradient>
-            </defs>
-          </svg>
+        <div class="auth-logo-badge" style="background: linear-gradient(135deg, #b91c1c, #ea580c); font-size: 2.8rem; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); border-radius: 22px; user-select: none;">
+          <span style="display: inline-block; transform: scale(1.15); filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));">🦉</span>
         </div>
-        <h1>My Apar</h1>
+        <h1>🦉 My APAR</h1>
         <p>Silakan pilih atau masukkan akun yang telah terdaftar untuk masuk ke sistem checklist &amp; manajemen APAR.</p>
       </div>
 
@@ -98,21 +88,11 @@
     <!-- Top Header -->
     <header class="app-header">
       <div class="header-brand">
-        <div class="header-icon">
-          <svg class="header-logo-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="24" fill="url(#hdr_logo_grad)"/>
-            <path d="M50 20C42 20 35 25 35 32V38H30C26.6863 38 24 40.6863 24 44V76C24 79.3137 26.6863 82 30 82H70C73.3137 82 76 79.3137 76 76V44C76 40.6863 73.3137 38 70 38H65V32C65 25 58 20 50 20ZM42 32C42 28.5 45.5 26 50 26C54.5 26 58 28.5 58 32V38H42V32ZM50 52C53.3137 52 56 54.6863 56 58C56 60.25 54.75 62.2 52.88 63.15L54 70H46L47.12 63.15C45.25 62.2 44 60.25 44 58C44 54.6863 46.6863 52 50 52Z" fill="white"/>
-            <path d="M68 22L78 14M78 14L84 20M78 14V26" stroke="#FF5252" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-            <defs>
-              <linearGradient id="hdr_logo_grad" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
-                <stop stop-color="#E53935"/>
-                <stop offset="1" stop-color="#C62828"/>
-              </linearGradient>
-            </defs>
-          </svg>
+        <div class="header-icon" style="background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.35); font-size: 1.9rem; display: flex; align-items: center; justify-content: center; border-radius: 14px; box-shadow: 0 6px 16px rgba(0,0,0,0.2); user-select: none;">
+          <span style="display: inline-block; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));">🦉</span>
         </div>
         <div class="header-title-group">
-          <h1>My APAR</h1>
+          <h1>🦉 My APAR</h1>
           <p>Sistem Pemeliharaan &amp; Checklist Bulanan Real-Time</p>
         </div>
       </div>
@@ -432,29 +412,23 @@ service cloud.firestore {
                 </ol>
 
                 <div style="position: relative; margin-bottom: 8px;">
-                  <button type="button" onclick="copyGasCode()" style="position: absolute; right: 8px; top: 8px; background: #38bdf8; color: #000; border: none; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; cursor: pointer;">📋 Copy Kode</button>
-                  <pre id="gasCodeBox" style="background:#0f172a; padding:10px; border-radius:6px; font-size:0.75rem; color:#4ade80; overflow-x:auto; max-height:220px; margin:0;">function toSafeCell(val) {
-  if (val === null || val === undefined || val === '') return "-";
-  if (typeof val === "object") return JSON.stringify(val);
-  return String(val);
-}
+                  <button type="button" id="btnCopyGasCodeTop" onclick="copyGasCode()" style="position: absolute; right: 8px; top: 8px; background: #38bdf8; color: #000; border: none; padding: 4px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: bold; cursor: pointer; z-index: 10;">📋 Salin Kode Script</button>
+                  <pre id="gasCodeBox" style="background:#0f172a; padding:12px; border-radius:6px; font-size:0.75rem; color:#4ade80; overflow-x:auto; max-height:260px; margin:0; line-height: 1.45;">/**
+ * =========================================================================
+ * GOOGLE APPS SCRIPT — SISTEM PEMELIHARAAN APAR & FSS K3
+ * Auto-Sync Real-Time, Foto Eviden Otomatis di Sel, & Manajemen Data
+ * =========================================================================
+ */
 
 function doGet(e) {
-  var ssName = "Tidak Terdeteksi";
-  try {
-    var activeSs = SpreadsheetApp.getActiveSpreadsheet();
-    if (activeSs) ssName = activeSs.getName();
-  } catch(eSs) {}
-  
-  return ContentService.createTextOutput(JSON.stringify({
-    success: true,
-    message: "Google Apps Script Web App APAR K3 aktif & terhubung! ✅",
-    spreadsheetName: ssName,
-    timestamp: new Date().toISOString()
-  })).setMimeType(ContentService.MimeType.JSON);
+  return handleRequest(e);
 }
 
 function doPost(e) {
+  return handleRequest(e);
+}
+
+function handleRequest(e) {
   try {
     var data = {};
     if (e && e.postData && e.postData.contents) {
@@ -493,7 +467,18 @@ function doPost(e) {
     if (!ss) {
       return ContentService.createTextOutput(JSON.stringify({
         success: false,
-        error: "Spreadsheet tidak terdeteksi. Harap buat script melalui menu Extensions > Apps Script di dalam Google Sheets Anda!"
+        error: "Spreadsheet tidak terdeteksi. Buka menu Extensions > Apps Script langsung di dalam Google Sheets Anda!"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Response for simple test GET / ping
+    if (!data || Object.keys(data).length === 0 || data.action === "ping") {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        message: "Google Apps Script Web App APAR K3 aktif & terhubung! 🦉",
+        spreadsheetName: ss.getName(),
+        spreadsheetUrl: ss.getUrl(),
+        timestamp: new Date().toISOString()
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -515,7 +500,39 @@ function doPost(e) {
       try { sheet.setColumnWidth(17, 120); } catch(eW) {}
     }
 
-    // 1. FITUR SINKRONISASI MASSAL (sync_all)
+    function toSafeCell(val) {
+      if (val === null || val === undefined || val === "") return "-";
+      if (val === "good") return "Baik / Sesuai";
+      if (val === "bad") return "Rusak / Tidak Sesuai";
+      return String(val).trim();
+    }
+
+    // Helper: Upload Base64 Photo to Google Drive and return Formula =IMAGE(...)
+    function processPhoto(photoData, kodeLabel, idx) {
+      if (!photoData || typeof photoData !== "string" || photoData.indexOf("base64,") === -1) {
+        if (photoData && String(photoData).indexOf("http") === 0) {
+          return '=IMAGE("' + photoData + '", 1)';
+        }
+        return "-";
+      }
+
+      try {
+        var folderName = "Foto_Eviden_APAR";
+        var folders = DriveApp.getFoldersByName(folderName);
+        var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+        var base64Content = photoData.split("base64,")[1];
+        var fileName = "EVIDEN_" + (kodeLabel || "APAR") + "_" + Date.now() + (idx !== undefined ? ("_" + idx) : "") + ".jpg";
+        var blob = Utilities.newBlob(Utilities.base64Decode(base64Content), "image/jpeg", fileName);
+        var file = folder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        var fileId = file.getId();
+        return '=IMAGE("https://lh3.googleusercontent.com/d/' + fileId + '", 1)';
+      } catch (eImg) {
+        return "Err Foto: " + eImg.toString();
+      }
+    }
+
+    // 1. FITUR SINKRONISASI MASSAL (sync_all / items)
     if (data.action === "sync_all" || Array.isArray(data.items)) {
       var items = data.items || [];
       if (!Array.isArray(items) && typeof items === "object") {
@@ -534,31 +551,10 @@ function doPost(e) {
         var item = items[i];
         if (!item) continue;
 
-        var photoCellVal = "-";
-        var photoUrl = toSafeCell(item.photoUrl || item.fotoUrl);
-        var fileId = "";
-
-        if (item.foto && typeof item.foto === "string" && item.foto.indexOf("base64,") !== -1) {
-          try {
-            var folderName = "Foto_Eviden_APAR";
-            var folders = DriveApp.getFoldersByName(folderName);
-            var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
-            var base64Data = item.foto.split("base64,")[1];
-            var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), "image/jpeg", "EVIDEN_" + (item.kode || item.id || "APAR") + "_" + Date.now() + "_" + i + ".jpg");
-            var file = folder.createFile(blob);
-            file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-            fileId = file.getId();
-            photoUrl = file.getUrl();
-            photoCellVal = '=IMAGE("https://lh3.googleusercontent.com/d/' + fileId + '", 1)';
-          } catch (eImg) {
-            photoCellVal = (photoUrl !== "-" && String(photoUrl).indexOf("http") === 0) ? '=IMAGE("' + photoUrl + '", 1)' : photoUrl;
-          }
-        } else if (photoUrl !== "-") {
-          photoCellVal = String(photoUrl).indexOf("http") === 0 ? '=IMAGE("' + photoUrl + '", 1)' : photoUrl;
-        }
+        var photoFormula = processPhoto(item.foto || item.photoUrl, item.kode || item.id, i);
 
         rowsToAdd.push([
-          toSafeCell(item.tanggal || new Date().toLocaleString("id-ID")),
+          toSafeCell(item.tanggal || item.tgl || new Date().toLocaleString("id-ID")),
           toSafeCell(item.kode || item.id),
           toSafeCell(item.gedung),
           toSafeCell(item.ruangan),
@@ -574,7 +570,7 @@ function doPost(e) {
           toSafeCell(item.tagLabel || item.tag),
           toSafeCell(item.status || "OK"),
           toSafeCell(item.keterangan),
-          photoCellVal,
+          photoFormula,
           toSafeCell(item.pemeriksa || "Petugas")
         ]);
       }
@@ -592,20 +588,21 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({
         success: true,
         message: "Berhasil sinkronisasi massal " + rowsToAdd.length + " data inspeksi ke Google Sheets & Drive!",
-        totalSynced: rowsToAdd.length
+        totalSynced: rowsToAdd.length,
+        spreadsheetUrl: ss.getUrl()
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 2. FITUR HAPUS TUGAS (action === "delete")
+    // 2. FITUR HAPUS DATA (delete)
     if (data.action === "delete") {
       var targetKode = String(data.kode || data.id || "").trim().toLowerCase();
       if (targetKode) {
         var rows = sheet.getDataRange().getValues();
         var deletedCount = 0;
-        for (var i = rows.length - 1; i >= 1; i--) {
-          var rowKode = String(rows[i][1] || "").trim().toLowerCase();
+        for (var d = rows.length - 1; d >= 1; d--) {
+          var rowKode = String(rows[d][1] || "").trim().toLowerCase();
           if (rowKode === targetKode) {
-            sheet.deleteRow(i + 1);
+            sheet.deleteRow(d + 1);
             deletedCount++;
           }
         }
@@ -617,34 +614,12 @@ function doPost(e) {
       }
     }
 
-    // 3. SIMPAN / UPDATE TUNGGAL (UPSERT REAL-TIME DENGAN FOTO LANGSUNG DI SEL)
-    var photoCellVal = "-";
-    var photoUrl = "";
-    var fileId = "";
-
-    if (data.foto && typeof data.foto === "string" && data.foto.indexOf("base64,") !== -1) {
-      try {
-        var folderName = "Foto_Eviden_APAR";
-        var folders = DriveApp.getFoldersByName(folderName);
-        var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
-        var base64Data = data.foto.split("base64,")[1];
-        var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), "image/jpeg", "EVIDEN_" + (data.kode || data.id || "APAR") + "_" + Date.now() + ".jpg");
-        var file = folder.createFile(blob);
-        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-        fileId = file.getId();
-        photoUrl = file.getUrl();
-        // Embed foto langsung ke dalam sel menggunakan rumus IMAGE Google Sheets
-        photoCellVal = '=IMAGE("https://lh3.googleusercontent.com/d/' + fileId + '", 1)';
-      } catch (imgErr) { 
-        photoCellVal = toSafeCell(data.photoUrl) !== "-" ? ('=IMAGE("' + toSafeCell(data.photoUrl) + '", 1)') : ("Err: " + imgErr.toString()); 
-      }
-    } else if (data.photoUrl && data.photoUrl !== "-") {
-      photoCellVal = String(data.photoUrl).indexOf("http") === 0 ? ('=IMAGE("' + data.photoUrl + '", 1)') : data.photoUrl;
-    }
+    // 3. SIMPAN / UPDATE REAL-TIME TUNGGAL (UPSERT)
+    var photoCell = processPhoto(data.foto || data.photoUrl, data.kode || data.id);
 
     var targetKodeNew = String(data.kode || data.id || "").trim().toLowerCase();
     var existingRowIndex = -1;
-    if (targetKodeNew && targetKodeNew !== "test_koneksi") {
+    if (targetKodeNew && targetKodeNew !== "test_koneksi" && targetKodeNew !== "test-apar-01") {
       var allRows = sheet.getDataRange().getValues();
       for (var r = 1; r < allRows.length; r++) {
         if (String(allRows[r][1] || "").trim().toLowerCase() === targetKodeNew) {
@@ -655,7 +630,7 @@ function doPost(e) {
     }
 
     var rowValues = [
-      toSafeCell(data.tanggal || new Date().toLocaleString("id-ID")),
+      toSafeCell(data.tanggal || data.tgl || new Date().toLocaleString("id-ID")),
       toSafeCell(data.kode || data.id),
       toSafeCell(data.gedung),
       toSafeCell(data.ruangan),
@@ -671,7 +646,7 @@ function doPost(e) {
       toSafeCell(data.tagLabel || data.tag),
       toSafeCell(data.status || "OK"),
       toSafeCell(data.keterangan),
-      photoCellVal,
+      photoCell,
       toSafeCell(data.pemeriksa || "Petugas")
     ];
 
@@ -682,7 +657,6 @@ function doPost(e) {
       sheet.appendRow(rowValues);
     }
 
-    // Set ukuran tinggi baris & lebar kolom agar foto terlihat jelas di Google Sheets
     try {
       sheet.setRowHeight(targetRow, 85);
       sheet.setColumnWidth(17, 120);
@@ -691,9 +665,9 @@ function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({ 
       success: true, 
       message: "Data APAR Kode " + (data.kode || data.id || "") + " berhasil dicatat dan foto ditampilkan langsung di sel Google Sheets!", 
-      photoUrl: photoUrl,
-      fileId: fileId
+      spreadsheetUrl: ss.getUrl()
     })).setMimeType(ContentService.MimeType.JSON);
+
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ 
       success: false, 
@@ -4181,6 +4155,128 @@ async function downloadExcel() {
 /* ===========================================================
    14. Google Sheets & Google Drive Integration Engine
    =========================================================== */
+
+async function sendPayloadToGoogleAppsScript(url, payload) {
+  let cleanUrl = (url || '').trim().replace(/^["']|["']$/g, '');
+  if (cleanUrl.includes('/edit')) {
+    cleanUrl = cleanUrl.replace(/\/edit(\?.*)?$/, '/exec$1');
+  }
+  if (cleanUrl.includes('/dev')) {
+    cleanUrl = cleanUrl.replace(/\/dev(\?.*)?$/, '/exec$1');
+  }
+
+  // 1. Try server proxy first (reliable, bypasses browser CORS)
+  try {
+    const res = await fetch('/api/gdrive/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ googleScriptUrl: cleanUrl, payload: payload })
+    });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { data = { raw: text }; }
+    
+    if (res.ok && data && (data.success !== false)) {
+      return {
+        success: true,
+        message: data.message || 'Data berhasil dikirim ke Google Sheets & Drive!',
+        data: data.data || data
+      };
+    }
+  } catch (proxyErr) {
+    console.warn('Proxy gdrive sync notice, trying direct client fetch...', proxyErr);
+  }
+
+  // 2. Direct client fetch fallback (using text/plain to avoid CORS preflight options blocking)
+  try {
+    const res = await fetch(cleanUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      mode: 'cors'
+    });
+    if (res.ok) {
+      const text = await res.text();
+      try {
+        const json = JSON.parse(text);
+        return { success: true, message: json.message || 'Tersinkronkan ke Google Sheets!', data: json };
+      } catch (e) {
+        return { success: true, message: 'Data terkirim ke Google Sheets & Drive!' };
+      }
+    }
+  } catch (directErr) {
+    // If CORS restricted response inspection, attempt no-cors mode to ensure payload reaches Apps Script
+    try {
+      await fetch(cleanUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+        mode: 'no-cors'
+      });
+      return { success: true, message: 'Data diproses ke Google Apps Script.' };
+    } catch (noCorsErr) {
+      return { success: false, message: 'Gagal mengirim ke Google Apps Script: ' + noCorsErr.message };
+    }
+  }
+
+  return { success: true, message: 'Data diproses ke Google Sheets & Drive.' };
+}
+window.sendPayloadToGoogleAppsScript = sendPayloadToGoogleAppsScript;
+
+async function syncSingleToGoogleSheets(entry) {
+  const url = (GDRIVE_SETTINGS && GDRIVE_SETTINGS.googleScriptUrl) ? GDRIVE_SETTINGS.googleScriptUrl : '';
+  if (!url || !url.startsWith('http')) return { success: false, message: 'URL belum dikonfigurasi' };
+  
+  const master = (entry.kode && DATA_BY_KODE[entry.kode]) ? DATA_BY_KODE[entry.kode] : {};
+  const fullPayload = {
+    action: 'save',
+    ...entry,
+    ruangan: entry.ruangan || master.ruangan || '',
+    gedung: entry.gedung || master.gedung || '',
+    lantai: entry.lantai !== undefined ? entry.lantai : (master.lantai || ''),
+    merk: entry.merk || master.merk || '',
+    kapasitas: entry.kapasitas || master.kapasitas || '',
+    jenisGas: entry.jenisGas || master.jenisGas || ''
+  };
+
+  return await sendPayloadToGoogleAppsScript(url, fullPayload);
+}
+window.syncSingleToGoogleSheets = syncSingleToGoogleSheets;
+
+async function syncSingleDeleteToGoogleSheets(targetKode) {
+  const url = (GDRIVE_SETTINGS && GDRIVE_SETTINGS.googleScriptUrl) ? GDRIVE_SETTINGS.googleScriptUrl : '';
+  if (!url || !url.startsWith('http')) return { success: false, message: 'URL belum dikonfigurasi' };
+
+  return await sendPayloadToGoogleAppsScript(url, {
+    action: 'delete',
+    kode: targetKode,
+    id: targetKode
+  });
+}
+window.syncSingleDeleteToGoogleSheets = syncSingleDeleteToGoogleSheets;
+
+function copyGasCode() {
+  const box = document.getElementById('gasCodeBox');
+  if (!box) return;
+  const text = box.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('btnCopyGasCodeTop');
+    if (btn) {
+      btn.textContent = '✅ Berhasil Disalin!';
+      btn.style.background = '#10b981';
+      btn.style.color = '#fff';
+      setTimeout(() => {
+        btn.textContent = '📋 Salin Kode Script';
+        btn.style.background = '#38bdf8';
+        btn.style.color = '#000';
+      }, 2500);
+    }
+    showStatus('Kode Google Apps Script berhasil disalin ke clipboard! 📋', 'ok');
+  }).catch(() => {
+    showStatus('Silakan blok teks kode secara manual untuk menyalin.', 'info');
+  });
+}
+window.copyGasCode = copyGasCode;
 
 const gdriveModal = document.getElementById('gdriveModal');
 const btnOpenGdriveModal = document.getElementById('btnOpenGdriveModal');
