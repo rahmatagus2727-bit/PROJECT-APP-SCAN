@@ -496,10 +496,11 @@ function doPost(e) {
         "Waktu", "Kode APAR", "Gedung", "Ruangan", "Lantai", 
         "Merk", "Kapasitas", "Gas", "Kebersihan", "Tekanan", 
         "Pin", "Selang", "Nozzle", "Tag", "Status", 
-        "Keterangan", "Link Foto Drive", "Pemeriksa"
+        "Keterangan", "Foto Eviden (Langsung di Sel)", "Pemeriksa"
       ]);
       sheet.getRange(1, 1, 1, 18).setFontWeight("bold").setBackground("#0f172a").setFontColor("#ffffff");
       try { sheet.setFrozenRows(1); } catch(eF) {}
+      try { sheet.setColumnWidth(17, 120); } catch(eW) {}
     }
 
     // 1. FITUR SINKRONISASI MASSAL (sync_all)
@@ -521,7 +522,10 @@ function doPost(e) {
         var item = items[i];
         if (!item) continue;
 
+        var photoCellVal = "-";
         var photoUrl = toSafeCell(item.photoUrl || item.fotoUrl);
+        var fileId = "";
+
         if (item.foto && typeof item.foto === "string" && item.foto.indexOf("base64,") !== -1) {
           try {
             var folderName = "Foto_Eviden_APAR";
@@ -531,13 +535,15 @@ function doPost(e) {
             var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), "image/jpeg", "EVIDEN_" + (item.kode || item.id || "APAR") + "_" + Date.now() + "_" + i + ".jpg");
             var file = folder.createFile(blob);
             file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            fileId = file.getId();
             photoUrl = file.getUrl();
+            photoCellVal = '=IMAGE("https://lh3.googleusercontent.com/d/' + fileId + '", 1)';
           } catch (eImg) {
-            if (photoUrl === "-") photoUrl = toSafeCell(item.photoUrl);
+            photoCellVal = (photoUrl !== "-" && String(photoUrl).indexOf("http") === 0) ? '=IMAGE("' + photoUrl + '", 1)' : photoUrl;
           }
+        } else if (photoUrl !== "-") {
+          photoCellVal = String(photoUrl).indexOf("http") === 0 ? '=IMAGE("' + photoUrl + '", 1)' : photoUrl;
         }
-
-        var photoCellVal = (photoUrl !== "-" && String(photoUrl).indexOf("http") === 0) ? '=HYPERLINK("' + photoUrl + '", "👁️ Lihat Foto Eviden")' : photoUrl;
 
         rowsToAdd.push([
           toSafeCell(item.tanggal || new Date().toLocaleString("id-ID")),
@@ -563,6 +569,12 @@ function doPost(e) {
 
       if (rowsToAdd.length > 0) {
         sheet.getRange(2, 1, rowsToAdd.length, 18).setValues(rowsToAdd);
+        try {
+          sheet.setColumnWidth(17, 120);
+          for (var rIdx = 0; rIdx < rowsToAdd.length; rIdx++) {
+            sheet.setRowHeight(rIdx + 2, 85);
+          }
+        } catch(eH) {}
       }
 
       return ContentService.createTextOutput(JSON.stringify({
@@ -593,8 +605,11 @@ function doPost(e) {
       }
     }
 
-    // 3. SIMPAN / UPDATE TUNGGAL (UPSERT REAL-TIME)
-    var photoUrl = "-";
+    // 3. SIMPAN / UPDATE TUNGGAL (UPSERT REAL-TIME DENGAN FOTO LANGSUNG DI SEL)
+    var photoCellVal = "-";
+    var photoUrl = "";
+    var fileId = "";
+
     if (data.foto && typeof data.foto === "string" && data.foto.indexOf("base64,") !== -1) {
       try {
         var folderName = "Foto_Eviden_APAR";
@@ -604,13 +619,16 @@ function doPost(e) {
         var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), "image/jpeg", "EVIDEN_" + (data.kode || data.id || "APAR") + "_" + Date.now() + ".jpg");
         var file = folder.createFile(blob);
         file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        fileId = file.getId();
         photoUrl = file.getUrl();
-      } catch (imgErr) { photoUrl = toSafeCell(data.photoUrl) !== "-" ? toSafeCell(data.photoUrl) : ("Err: " + imgErr.toString()); }
-    } else if (data.photoUrl) {
-      photoUrl = toSafeCell(data.photoUrl);
+        // Embed foto langsung ke dalam sel menggunakan rumus IMAGE Google Sheets
+        photoCellVal = '=IMAGE("https://lh3.googleusercontent.com/d/' + fileId + '", 1)';
+      } catch (imgErr) { 
+        photoCellVal = toSafeCell(data.photoUrl) !== "-" ? ('=IMAGE("' + toSafeCell(data.photoUrl) + '", 1)') : ("Err: " + imgErr.toString()); 
+      }
+    } else if (data.photoUrl && data.photoUrl !== "-") {
+      photoCellVal = String(data.photoUrl).indexOf("http") === 0 ? ('=IMAGE("' + data.photoUrl + '", 1)') : data.photoUrl;
     }
-
-    var photoCellVal = (photoUrl !== "-" && String(photoUrl).indexOf("http") === 0) ? '=HYPERLINK("' + photoUrl + '", "👁️ Lihat Foto Eviden")' : photoUrl;
 
     var targetKodeNew = String(data.kode || data.id || "").trim().toLowerCase();
     var existingRowIndex = -1;
@@ -645,16 +663,24 @@ function doPost(e) {
       toSafeCell(data.pemeriksa || "Petugas")
     ];
 
+    var targetRow = (existingRowIndex > 0) ? existingRowIndex : sheet.getLastRow() + 1;
     if (existingRowIndex > 0) {
       sheet.getRange(existingRowIndex, 1, 1, 18).setValues([rowValues]);
     } else {
       sheet.appendRow(rowValues);
     }
 
+    // Set ukuran tinggi baris & lebar kolom agar foto terlihat jelas di Google Sheets
+    try {
+      sheet.setRowHeight(targetRow, 85);
+      sheet.setColumnWidth(17, 120);
+    } catch(eDim) {}
+
     return ContentService.createTextOutput(JSON.stringify({ 
       success: true, 
-      message: "Data APAR Kode " + (data.kode || data.id || "") + " berhasil dicatat ke Google Sheets & Drive!", 
-      photoUrl: photoUrl 
+      message: "Data APAR Kode " + (data.kode || data.id || "") + " berhasil dicatat dan foto ditampilkan langsung di sel Google Sheets!", 
+      photoUrl: photoUrl,
+      fileId: fileId
     })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ 
@@ -925,6 +951,29 @@ let syncHeartbeat = null;
 let NOTIFICATIONS = [];
 let UNREAD_NOTIF_COUNT = 0;
 
+function loadLocalNotifications() {
+  try {
+    const raw = localStorage.getItem('apar_notifications_v1');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        NOTIFICATIONS = parsed;
+      }
+    }
+  } catch (e) {
+    NOTIFICATIONS = [];
+  }
+  UNREAD_NOTIF_COUNT = NOTIFICATIONS.filter(n => !n.is_read).length;
+  updateNotificationBadge();
+  renderNotificationFeed();
+}
+
+function saveLocalNotifications() {
+  try {
+    localStorage.setItem('apar_notifications_v1', JSON.stringify(NOTIFICATIONS.slice(0, 100)));
+  } catch (e) {}
+}
+
 function updateNotificationBadge() {
   const badge = document.getElementById('notifBadge');
   if (!badge) return;
@@ -977,6 +1026,43 @@ function showNotificationToast(notif) {
       setTimeout(() => toast.remove(), 320);
     }
   }, 5500);
+}
+
+function addNotification(notif, isRemote = false) {
+  if (!notif) return;
+  if (!notif.id) {
+    notif.id = 'notif_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+  }
+  if (!notif.created_at) {
+    notif.created_at = new Date().toISOString();
+  }
+
+  // Deduplicate by ID or identical event in close timeframe
+  const exists = NOTIFICATIONS.some(n => 
+    n.id === notif.id || 
+    (n.kode === notif.kode && n.type === notif.type && Math.abs(new Date(n.created_at).getTime() - new Date(notif.created_at).getTime()) < 3500)
+  );
+
+  if (exists) return;
+
+  NOTIFICATIONS.unshift(notif);
+  if (NOTIFICATIONS.length > 100) NOTIFICATIONS.length = 100;
+
+  if (!notif.is_read) {
+    UNREAD_NOTIF_COUNT++;
+  }
+
+  saveLocalNotifications();
+  updateNotificationBadge();
+  renderNotificationFeed();
+  showNotificationToast(notif);
+
+  // Sync to Firestore if initiated locally
+  if (!isRemote && db && isFirebaseConfigured()) {
+    try {
+      db.collection('notifications').doc(notif.id).set(notif, { merge: true }).catch(() => {});
+    } catch (e) {}
+  }
 }
 
 function renderNotificationFeed() {
@@ -1051,6 +1137,7 @@ async function markAllNotificationsAsRead(showToastNotice = true) {
   try {
     NOTIFICATIONS.forEach(n => n.is_read = 1);
     UNREAD_NOTIF_COUNT = 0;
+    saveLocalNotifications();
     updateNotificationBadge();
     renderNotificationFeed();
 
@@ -1073,6 +1160,7 @@ async function clearAllNotificationsLog() {
   try {
     NOTIFICATIONS = [];
     UNREAD_NOTIF_COUNT = 0;
+    saveLocalNotifications();
     updateNotificationBadge();
     renderNotificationFeed();
 
@@ -1117,9 +1205,17 @@ function initServerEventSource() {
             setDbStatus('online', `Real-Time Aktif (${total} data)`);
           }
 
-          if (Array.isArray(payload.notifications)) {
-            NOTIFICATIONS = payload.notifications;
-            UNREAD_NOTIF_COUNT = payload.unreadCount !== undefined ? payload.unreadCount : (payload.unreadNotificationCount || 0);
+          if (Array.isArray(payload.notifications) && payload.notifications.length > 0) {
+            payload.notifications.forEach(notif => {
+              const exists = NOTIFICATIONS.some(n => n.id === notif.id);
+              if (!exists) {
+                NOTIFICATIONS.push(notif);
+              }
+            });
+            NOTIFICATIONS.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            if (NOTIFICATIONS.length > 100) NOTIFICATIONS.length = 100;
+            UNREAD_NOTIF_COUNT = NOTIFICATIONS.filter(n => !n.is_read).length;
+            saveLocalNotifications();
             updateNotificationBadge();
             renderNotificationFeed();
           }
@@ -1147,11 +1243,7 @@ function initServerEventSource() {
           setDbStatus('online', `Real-Time Aktif (${count} data)`);
 
           if (payload.notification) {
-            NOTIFICATIONS.unshift(payload.notification);
-            UNREAD_NOTIF_COUNT++;
-            updateNotificationBadge();
-            showNotificationToast(payload.notification);
-            renderNotificationFeed();
+            addNotification(payload.notification, true);
           }
         } else if (payload.type === 'delete_single' && payload.docId) {
           const targetId = String(payload.docId).trim().toLowerCase();
@@ -1174,11 +1266,7 @@ function initServerEventSource() {
           setDbStatus('online', `Real-Time Aktif (${count} data)`);
 
           if (payload.notification) {
-            NOTIFICATIONS.unshift(payload.notification);
-            UNREAD_NOTIF_COUNT++;
-            updateNotificationBadge();
-            showNotificationToast(payload.notification);
-            renderNotificationFeed();
+            addNotification(payload.notification, true);
           }
         } else if (payload.type === 'reset') {
           LOG = {};
@@ -1187,26 +1275,20 @@ function initServerEventSource() {
           renderProgress();
 
           if (payload.notification) {
-            NOTIFICATIONS.unshift(payload.notification);
-            UNREAD_NOTIF_COUNT++;
-            updateNotificationBadge();
-            showNotificationToast(payload.notification);
-            renderNotificationFeed();
+            addNotification(payload.notification, true);
           }
         } else if (payload.type === 'notification' && payload.notification) {
-          NOTIFICATIONS.unshift(payload.notification);
-          UNREAD_NOTIF_COUNT++;
-          updateNotificationBadge();
-          showNotificationToast(payload.notification);
-          renderNotificationFeed();
+          addNotification(payload.notification, true);
         } else if (payload.type === 'notifications_read') {
           NOTIFICATIONS.forEach(n => n.is_read = 1);
-          UNREAD_NOTIF_COUNT = payload.unreadCount || 0;
+          UNREAD_NOTIF_COUNT = 0;
+          saveLocalNotifications();
           updateNotificationBadge();
           renderNotificationFeed();
         } else if (payload.type === 'notifications_cleared') {
           NOTIFICATIONS = [];
           UNREAD_NOTIF_COUNT = 0;
+          saveLocalNotifications();
           updateNotificationBadge();
           renderNotificationFeed();
         } else if (payload.type === 'user_deleted' && payload.deletedUserId) {
@@ -1428,9 +1510,28 @@ function startFirestoreSync() {
       }
     });
   } catch (err) {}
+
+  // Real-time listener for notifications collection
+  try {
+    if (typeof unsubscribeFirestoreNotifs === 'function') {
+      try { unsubscribeFirestoreNotifs(); } catch (e) {}
+      unsubscribeFirestoreNotifs = null;
+    }
+    unsubscribeFirestoreNotifs = db.collection('notifications').orderBy('created_at', 'desc').limit(50).onSnapshot((snapshot) => {
+      snapshot.docChanges().forEach(change => {
+        if (change.type === 'added') {
+          const notifData = change.doc.data();
+          if (notifData) {
+            addNotification(notifData, true);
+          }
+        }
+      });
+    });
+  } catch (err) {}
 }
 
 function initFirebase() {
+  loadLocalNotifications();
   // Always initialize server SSE for 100% instant sync
   initServerEventSource();
   fetchFreshCloudData(false);
@@ -3218,6 +3319,30 @@ async function persistEntry(entry) {
   renderRiwayat();
   renderProgress();
 
+  // Instant local real-time notification
+  const petugasName = cleanDoc.pemeriksa || (currentUser ? (currentUser.name || currentUser.email) : 'Petugas Lapangan');
+  const lokasiStr = [cleanDoc.ruangan, cleanDoc.gedung ? `Gd. ${cleanDoc.gedung}` : ''].filter(Boolean).join(' - ') || 'Lokasi Terdaftar';
+
+  const notifObj = {
+    id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    type: 'task_submitted',
+    title: `📋 Tugas Masuk: APAR Kode ${docId}`,
+    message: `Pemeriksaan APAR Kode ${docId} (${lokasiStr}) telah selesai dikerjakan oleh ${petugasName}. Status: ${cleanDoc.status || 'OK'}.`,
+    kode: docId,
+    pemeriksa: petugasName,
+    created_at: new Date().toISOString(),
+    is_read: 0,
+    details: {
+      kode: docId,
+      ruangan: cleanDoc.ruangan || '',
+      gedung: cleanDoc.gedung || '',
+      status: cleanDoc.status || 'OK',
+      pemeriksa: petugasName,
+      hasPhoto: !!cleanDoc.foto
+    }
+  };
+  addNotification(notifObj, false);
+
   let serverSaved = false;
   let cloudSaved = false;
 
@@ -3641,6 +3766,20 @@ async function deleteSingleLogEntry(targetKode) {
     resultStatusBadge.style.color = '#f87171';
   }
 
+  // Instant real-time notification
+  const delNotifObj = {
+    id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    type: 'task_deleted',
+    title: `🗑️ Data Dihapus: APAR Kode ${kodeStr}`,
+    message: `Data hasil pemeriksaan APAR Kode ${kodeStr} telah dihapus dari riwayat sistem.`,
+    kode: kodeStr,
+    pemeriksa: currentUser ? (currentUser.name || currentUser.email) : 'Petugas/Admin',
+    created_at: new Date().toISOString(),
+    is_read: 0,
+    details: { kode: kodeStr }
+  };
+  addNotification(delNotifObj, false);
+
   // 3. Delete from Backend Server SQLite (broadcasts SSE 'delete_single' to all connected users)
   try {
     await fetch(`/api/apar_log/${encodeURIComponent(kodeStr)}`, { method: 'DELETE' });
@@ -3733,6 +3872,20 @@ document.getElementById('btnResetLog').addEventListener('click', async () => {
 
     renderRiwayat();
     renderProgress();
+
+    const resetNotifObj = {
+      id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      type: 'system_reset',
+      title: `⚠️ Riwayat Direset: Seluruh Data Dikosongkan`,
+      message: `Seluruh riwayat pemeriksaan APAR di database telah direset oleh Administrator K3.`,
+      kode: 'ALL',
+      pemeriksa: currentUser ? (currentUser.name || currentUser.email) : 'Admin K3',
+      created_at: new Date().toISOString(),
+      is_read: 0,
+      details: {}
+    };
+    addNotification(resetNotifObj, false);
+
     showStatus('Semua riwayat pemeriksaan telah berhasil direset.', 'info');
   } catch (e) {
     console.error('Reset error:', e);

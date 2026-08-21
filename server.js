@@ -647,7 +647,7 @@ app.post('/api/apar_log', (req, res) => {
   const petugasName = entry.pemeriksa || 'Petugas Lapangan';
   const lokasiStr = [entry.ruangan, entry.gedung ? `Gd. ${entry.gedung}` : ''].filter(Boolean).join(' - ') || 'Lokasi Terdaftar';
   
-  addNotificationToSqlite({
+  const notifObj = addNotificationToSqlite({
     type: 'task_submitted',
     title: `📋 Tugas Masuk: APAR Kode ${docId}`,
     message: `Pemeriksaan APAR Kode ${docId} (${lokasiStr}) telah selesai dikerjakan oleh ${petugasName}. Status: ${entry.status || 'OK'}.`,
@@ -668,6 +668,7 @@ app.post('/api/apar_log', (req, res) => {
     type: 'update',
     docId,
     entry,
+    notification: notifObj,
     totalLogs: Object.keys(logs).length,
     timestamp: Date.now()
   });
@@ -688,6 +689,7 @@ app.post('/api/apar_log', (req, res) => {
     success: true,
     message: 'Data berhasil disimpan ke database SQLite, disiarkan secara real-time, dan disinkronkan ke Google Sheets.',
     docId,
+    notification: notifObj,
     totalLogs: Object.keys(logs).length
   });
 });
@@ -718,7 +720,7 @@ app.delete('/api/apar_log/:id', (req, res) => {
   const currentLogs = getAllInspectionsFromSqlite();
 
   // Create real-time notification about deleted task
-  addNotificationToSqlite({
+  const delNotif = addNotificationToSqlite({
     type: 'task_deleted',
     title: `🗑️ Data Dihapus: APAR Kode ${cleanId}`,
     message: `Data pemeriksaan APAR Kode ${cleanId} telah dihapus dari riwayat sistem.`,
@@ -731,6 +733,7 @@ app.delete('/api/apar_log/:id', (req, res) => {
   broadcastUpdate({
     type: 'delete_single',
     docId: cleanId,
+    notification: delNotif,
     totalLogs: Object.keys(currentLogs).length,
     timestamp: Date.now()
   });
@@ -741,7 +744,7 @@ app.delete('/api/apar_log/:id', (req, res) => {
     callGoogleAppsScript(targetScriptUrl, { action: 'delete', kode: cleanId, id: cleanId }).catch(() => {});
   }
 
-  res.json({ success: true, message: `Log ${cleanId} berhasil dihapus.`, totalLogs: Object.keys(currentLogs).length });
+  res.json({ success: true, message: `Log ${cleanId} berhasil dihapus.`, notification: delNotif, totalLogs: Object.keys(currentLogs).length });
 });
 
 // Reset log if needed
@@ -755,7 +758,7 @@ app.delete('/api/apar_log', (req, res) => {
     try { fs.writeFileSync(LOG_FILE, '{}', 'utf-8'); } catch (e) {}
   }
 
-  addNotificationToSqlite({
+  const resetNotif = addNotificationToSqlite({
     type: 'system_reset',
     title: `⚠️ Riwayat Direset: Seluruh Data Dikosongkan`,
     message: `Seluruh riwayat pemeriksaan APAR di database telah direset oleh Administrator K3.`,
@@ -764,8 +767,8 @@ app.delete('/api/apar_log', (req, res) => {
     details: '{}'
   });
 
-  broadcastUpdate({ type: 'reset', timestamp: Date.now() });
-  res.json({ success: true, message: 'Semua log SQLite berhasil direset.' });
+  broadcastUpdate({ type: 'reset', notification: resetNotif, timestamp: Date.now() });
+  res.json({ success: true, message: 'Semua log SQLite berhasil direset.', notification: resetNotif });
 });
 
 // -------------------------------------------------------------
