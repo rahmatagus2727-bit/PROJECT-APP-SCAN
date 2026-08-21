@@ -969,6 +969,10 @@ function initServerEventSource() {
           }
         } else if (payload.type === 'user_updated' && payload.user) {
           const newU = payload.user;
+          if (newU.id) removeDeletedUserFromSet(newU.id);
+          if (newU.email) removeDeletedUserFromSet(newU.email);
+          if (newU.name) removeDeletedUserFromSet(newU.name);
+
           const idx = cachedAdminUsers.findIndex(u => u.id === newU.id || (u.email && newU.email && u.email.toLowerCase() === newU.email.toLowerCase()));
           if (idx >= 0) {
             cachedAdminUsers[idx] = { ...cachedAdminUsers[idx], ...newU };
@@ -1104,8 +1108,24 @@ function startFirestoreSync() {
       snapshot.forEach(doc => {
         const d = doc.data();
         if (d) {
-          if (d.id && !isBlacklistedId(d.id)) addDeletedUserToSet(d.id);
-          if (d.email && !isBlacklistedId(d.email)) addDeletedUserToSet(d.email);
+          const dId = d.id ? String(d.id).trim().toLowerCase() : '';
+          const dEm = d.email ? String(d.email).trim().toLowerCase() : '';
+
+          const isActive = Array.isArray(cachedAdminUsers) && cachedAdminUsers.some(u => {
+            if (!u) return false;
+            const uId = (u.id || '').toLowerCase().trim();
+            const uEm = (u.email || '').toLowerCase().trim();
+            return (dId && uId === dId) || (dEm && uEm === dEm);
+          });
+
+          if (isActive) {
+            if (dId) removeDeletedUserFromSet(dId);
+            if (dEm) removeDeletedUserFromSet(dEm);
+            doc.ref.delete().catch(() => {});
+          } else {
+            if (dId && !isBlacklistedId(dId)) addDeletedUserToSet(dId);
+            if (dEm && !isBlacklistedId(dEm)) addDeletedUserToSet(dEm);
+          }
         }
       });
       verifyActiveUserSession();
@@ -1121,20 +1141,21 @@ function startFirestoreSync() {
         if (u) {
           const uId = u.id || doc.id;
           const uEm = u.email || '';
-          if (!isUserDeleted(uId, uEm)) {
-            fsUsers.push({
-              id: uId,
-              name: u.name || uEm || uId,
-              email: uEm,
-              password: u.password || '123',
-              role: u.role || 'petugas',
-              created_at: u.createdAt || u.created_at || new Date().toISOString()
-            });
-          }
+          if (uId) removeDeletedUserFromSet(uId);
+          if (uEm) removeDeletedUserFromSet(uEm);
+
+          fsUsers.push({
+            id: uId,
+            name: u.name || uEm || uId,
+            email: uEm,
+            password: u.password || '123',
+            role: u.role || 'petugas',
+            created_at: u.createdAt || u.created_at || new Date().toISOString()
+          });
         }
       });
       if (fsUsers.length) {
-        cachedAdminUsers = fsUsers.filter(u => !isUserDeleted(u.id, u.email));
+        cachedAdminUsers = fsUsers;
         try { localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers)); } catch (e) {}
         renderAdminUserList();
       }
@@ -1283,12 +1304,27 @@ function removeDeletedUserFromSet(idOrEmail) {
 }
 
 function isUserDeleted(id, email) {
-  const s = getDeletedUsersSet();
   const cId = (id && typeof id === 'string') ? id.toLowerCase().trim() : '';
   const cEm = (email && typeof email === 'string') ? email.toLowerCase().trim() : '';
 
   if (cId === 'user_admin' || cEm === 'admin@apar.id' || cId === 'admin') return false;
 
+  // Active accounts in cachedAdminUsers are ALWAYS active and NOT deleted
+  if (Array.isArray(cachedAdminUsers) && cachedAdminUsers.length > 0) {
+    const isActive = cachedAdminUsers.some(u => {
+      if (!u) return false;
+      const uId = (u.id || '').toLowerCase().trim();
+      const uEm = (u.email || '').toLowerCase().trim();
+      return (cId && uId === cId) || (cEm && uEm === cEm);
+    });
+    if (isActive) {
+      if (cId) removeDeletedUserFromSet(cId);
+      if (cEm) removeDeletedUserFromSet(cEm);
+      return false;
+    }
+  }
+
+  const s = getDeletedUsersSet();
   const validId = cId && !isBlacklistedId(cId);
   const validEm = cEm && !isBlacklistedId(cEm);
 
@@ -1651,7 +1687,11 @@ async function loadAdminUserList() {
     if (res.ok && contentType.includes('application/json')) {
       const data = await res.json();
       if (data && Array.isArray(data.users)) {
-        cachedAdminUsers = data.users.filter(u => !isUserDeleted(u.id, u.email));
+        data.users.forEach(u => {
+          if (u.id) removeDeletedUserFromSet(u.id);
+          if (u.email) removeDeletedUserFromSet(u.email);
+        });
+        cachedAdminUsers = data.users;
       }
     }
   } catch (e) {
@@ -1668,16 +1708,17 @@ async function loadAdminUserList() {
         if (u) {
           const uId = u.id || doc.id;
           const uEm = u.email || '';
-          if (!isUserDeleted(uId, uEm)) {
-            fsUsers.push({
-              id: uId,
-              name: u.name || uEm || uId,
-              email: uEm,
-              password: u.password || '123',
-              role: u.role || 'petugas',
-              created_at: u.createdAt || u.created_at || new Date().toISOString()
-            });
-          }
+          if (uId) removeDeletedUserFromSet(uId);
+          if (uEm) removeDeletedUserFromSet(uEm);
+
+          fsUsers.push({
+            id: uId,
+            name: u.name || uEm || uId,
+            email: uEm,
+            password: u.password || '123',
+            role: u.role || 'petugas',
+            created_at: u.createdAt || u.created_at || new Date().toISOString()
+          });
         }
       });
       if (fsUsers.length) {
@@ -1702,17 +1743,14 @@ async function loadAdminUserList() {
   if (!cachedAdminUsers || cachedAdminUsers.length === 0) {
     try {
       const local = JSON.parse(localStorage.getItem('apar_all_users') || '[]');
-      const filteredLocal = (local || []).filter(u => !isUserDeleted(u.id, u.email));
-      if (filteredLocal && filteredLocal.length) {
-        cachedAdminUsers = filteredLocal;
+      if (local && local.length) {
+        cachedAdminUsers = local;
       } else {
         cachedAdminUsers = getDefaultUsersList();
       }
     } catch (err) {
       cachedAdminUsers = getDefaultUsersList();
     }
-  } else {
-    cachedAdminUsers = cachedAdminUsers.filter(u => !isUserDeleted(u.id, u.email));
   }
 
   try {
@@ -1892,12 +1930,23 @@ if (formAdminAddUser) {
             createdAt: new Date().toISOString()
           }, { merge: true });
 
-          // Also remove from Firestore deleted_users collection if exists
-          await db.collection('deleted_users').doc(docId).delete().catch(() => {});
-          if (email) {
-            const emailDocId = String(email).replace(/[^a-zA-Z0-9_-]/g, '_');
-            await db.collection('deleted_users').doc(emailDocId).delete().catch(() => {});
-          }
+          // Delete any matching stale documents in Firestore deleted_users collection
+          try {
+            const cleanEmailStr = String(email).trim().toLowerCase();
+            const cleanNameStr = String(name).trim().toLowerCase();
+            const snapDel = await db.collection('deleted_users').get();
+            snapDel.forEach(doc => {
+              const d = doc.data();
+              if (d) {
+                const dId = String(d.id || doc.id).trim().toLowerCase();
+                const dEm = String(d.email || '').trim().toLowerCase();
+                const dNm = String(d.name || '').trim().toLowerCase();
+                if (dId === cleanEmailStr || dEm === cleanEmailStr || dNm === cleanNameStr || dId === newUserObj.id.toLowerCase()) {
+                  doc.ref.delete().catch(() => {});
+                }
+              }
+            });
+          } catch (e) {}
         } catch (fbErr) {
           console.warn('Firestore user save notice:', fbErr);
         }

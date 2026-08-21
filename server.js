@@ -665,13 +665,16 @@ app.get('/api/users', (req, res) => {
     return res.json({ success: true, users: [] });
   }
   try {
+    // Automatically purge stale deleted_users records for active accounts
+    sqliteDb.run(`
+      DELETE FROM deleted_users 
+      WHERE lower(id) IN (SELECT lower(id) FROM users)
+         OR (email IS NOT NULL AND trim(email) != '' AND lower(email) IN (SELECT lower(email) FROM users WHERE email IS NOT NULL AND trim(email) != ''))
+         OR (name IS NOT NULL AND trim(name) != '' AND lower(name) IN (SELECT lower(name) FROM users WHERE name IS NOT NULL AND trim(name) != ''))
+    `);
+
     const resUsers = sqliteDb.exec(`
       SELECT id, email, name, password, role, created_at FROM users 
-      WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users WHERE id IS NOT NULL AND trim(id) != '')
-        AND (
-          email IS NULL OR trim(email) = '' OR 
-          lower(email) NOT IN (SELECT lower(email) FROM deleted_users WHERE email IS NOT NULL AND trim(email) != '')
-        )
       ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC
     `);
     if (!resUsers || !resUsers[0]) {
@@ -706,8 +709,8 @@ app.post('/api/users', (req, res) => {
   if (sqliteDb) {
     try {
       // Remove from deleted_users if re-creating
-      sqliteDb.run("DELETE FROM deleted_users WHERE lower(id) = ? OR (email IS NOT NULL AND lower(email) = ?)", [
-        newId.toLowerCase(), cleanEmail
+      sqliteDb.run("DELETE FROM deleted_users WHERE lower(id) = ? OR lower(email) = ? OR lower(name) = ? OR lower(id) = ?", [
+        newId.toLowerCase(), cleanEmail, cleanName.toLowerCase(), cleanEmail
       ]);
 
       sqliteDb.run("INSERT OR REPLACE INTO users (id, email, name, password, role) VALUES (?, ?, ?, ?, ?)", [
@@ -717,7 +720,7 @@ app.post('/api/users', (req, res) => {
 
       // Update USERS_FILE
       try {
-        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users WHERE id IS NOT NULL AND trim(id) != '')");
+        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users");
         if (all && all[0]) {
           const list = all[0].values.map(([id, email, name, password, role, created_at]) => ({
             id, email, name, password, role, created_at
@@ -785,7 +788,7 @@ app.delete('/api/users/:id', (req, res) => {
 
       // Update USERS_FILE
       try {
-        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users WHERE id IS NOT NULL AND trim(id) != '')");
+        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users");
         if (all && all[0]) {
           const list = all[0].values.map(([id, email, name, password, role, created_at]) => ({
             id, email, name, password, role, created_at
@@ -871,20 +874,7 @@ app.post('/api/auth/login', (req, res) => {
   
   if (sqliteDb) {
     try {
-      // 1. Check if user was deleted
-      const isDeleted = sqliteDb.exec(
-        "SELECT id, name FROM deleted_users WHERE (id IS NOT NULL AND trim(id) != '' AND lower(id) = ?) OR (email IS NOT NULL AND trim(email) != '' AND lower(email) = ?)",
-        [cleanInput, cleanInput]
-      );
-      if (isDeleted && isDeleted[0] && isDeleted[0].values.length > 0) {
-        return res.status(401).json({
-          success: false,
-          isDeleted: true,
-          message: '⚠️ AKUN TIDAK TERSEDIA!\n\nAkun Anda telah dihapus oleh Admin K3 dan tidak dapat digunakan lagi.'
-        });
-      }
-
-      // 2. Find user by email, name, id, or username prefix (case-insensitive)
+      // 1. First, search for active user in users table
       const check = sqliteDb.exec(
         `SELECT id, email, name, password, role FROM users 
          WHERE lower(email) = ? 
@@ -897,43 +887,49 @@ app.post('/api/auth/login', (req, res) => {
         [cleanInput, cleanInput, cleanInput, cleanInput + '@apar.id', cleanInput, cleanInput + '%']
       );
 
-      if (!check || !check[0] || check[0].values.length === 0) {
-        return res.status(401).json({
-          success: false,
-          message: 'Akun tidak ditemukan! Pastikan Nama/ID benar atau hubungi Admin K3 untuk didaftarkan.'
+      if (check && check[0] && check[0].values.length > 0) {
+        const [id, uEmail, uName, uPass, uRole] = check[0].values[0];
+        const savedPass = String(uPass || '').trim();
+
+        // Clear any stale deleted_users entry for this active account!
+        sqliteDb.run(
+          "DELETE FROM deleted_users WHERE lower(id) = ? OR lower(email) = ? OR lower(name) = ?",
+          [String(id).toLowerCase(), String(uEmail || '').toLowerCase(), String(uName || '').toLowerCase()]
+        );
+
+        // STRICT password verification
+        if (savedPass !== inputPass) {
+          return res.status(401).json({
+            success: false,
+            message: 'Kata sandi atau PIN salah! Silakan periksa kembali.'
+          });
+        }
+
+        const effectiveRole = uRole || (id === 'user_admin' || String(uName).toLowerCase().includes('admin') ? 'admin' : 'petugas');
+
+        return res.json({
+          success: true,
+          message: `Login berhasil sebagai ${effectiveRole === 'admin' ? 'Admin' : 'Petugas'}.`,
+          user: { id, email: uEmail, name: uName || inputId, role: effectiveRole }
         });
       }
 
-      const [id, uEmail, uName, uPass, uRole] = check[0].values[0];
-      const savedPass = String(uPass || '').trim();
-
-      // Check if user ID or email is in deleted_users
-      const checkDeletedSub = sqliteDb.exec(
-        "SELECT id FROM deleted_users WHERE lower(id) = ? OR lower(email) = ?",
-        [String(id).toLowerCase(), String(uEmail || '').toLowerCase()]
+      // 2. Only if NOT found in users table, check if user was deleted
+      const isDeleted = sqliteDb.exec(
+        "SELECT id, name FROM deleted_users WHERE (id IS NOT NULL AND trim(id) != '' AND lower(id) = ?) OR (email IS NOT NULL AND trim(email) != '' AND lower(email) = ?)",
+        [cleanInput, cleanInput]
       );
-      if (checkDeletedSub && checkDeletedSub[0] && checkDeletedSub[0].values.length > 0) {
+      if (isDeleted && isDeleted[0] && isDeleted[0].values.length > 0) {
         return res.status(401).json({
           success: false,
           isDeleted: true,
-          message: '⚠️ AKUN TIDAK TERSEDIA!\n\nAkun ini telah dihapus oleh Administrator K3.'
+          message: '⚠️ AKUN TIDAK TERSEDIA!\n\nAkun Anda telah dihapus oleh Admin K3 dan tidak dapat digunakan lagi.'
         });
       }
 
-      // STRICT password verification
-      if (savedPass !== inputPass) {
-        return res.status(401).json({
-          success: false,
-          message: 'Kata sandi atau PIN salah! Silakan periksa kembali.'
-        });
-      }
-
-      const effectiveRole = uRole || (id === 'user_admin' || String(uName).toLowerCase().includes('admin') ? 'admin' : 'petugas');
-
-      return res.json({
-        success: true,
-        message: `Login berhasil sebagai ${effectiveRole === 'admin' ? 'Admin' : 'Petugas'}.`,
-        user: { id, email: uEmail, name: uName || inputId, role: effectiveRole }
+      return res.status(401).json({
+        success: false,
+        message: 'Akun tidak ditemukan! Pastikan Nama/ID benar atau hubungi Admin K3 untuk didaftarkan.'
       });
     } catch (dbErr) {
       console.warn('Login db warning:', dbErr);
