@@ -110,6 +110,11 @@
           <span class="theme-icon">🌙</span> <span class="theme-text">Mode Gelap</span>
         </button>
 
+        <button type="button" id="btnNotifications" class="btn-notif-bell" title="Log & Notifikasi Tugas Masuk Real-Time">
+          <span class="bell-icon">🔔</span> <span class="bell-text">Notifikasi</span>
+          <span id="notifBadge" class="notif-badge hidden">0</span>
+        </button>
+
         <div id="dbStatus" class="db-status-pill db-connecting" title="Status Database Bersama">
           <span>🔄</span> <span id="dbStatusText">Menyambungkan...</span>
         </div>
@@ -213,7 +218,11 @@
           <textarea id="keteranganInput" placeholder="Tuliskan catatan hasil pemeriksaan atau temuan khusus (opsional)"></textarea>
 
           <div class="foto-upload-box">
-            <label style="margin-top: 0; margin-bottom: 8px;">📷 Bukti Foto (EVIDEN)</label>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label style="margin: 0; font-weight: 700; color: var(--text-main);">📷 Bukti Foto (EVIDEN) <span style="color:#ef4444; font-weight: 800;">* WAJIB</span></label>
+              <span class="watermark-badge">✨ Auto Timestamp</span>
+            </div>
+            <p class="hint" style="margin-bottom: 8px; font-size: 0.76rem;">Foto wajib diupload dan otomatis dibubuhi stempel tanggal, bulan, tahun, jam &amp; kode APAR.</p>
             <div class="foto-btn-row">
               <button type="button" id="btnUploadFoto" class="btn btn-secondary btn-sm" style="flex:1;">📷 Ambil / Upload Foto</button>
               <button type="button" id="btnHapusFoto" class="btn btn-danger btn-sm hidden" style="flex:1;">🗑️ Hapus Foto</button>
@@ -419,9 +428,16 @@ service cloud.firestore {
 }
 
 function doGet(e) {
+  var ssName = "Tidak Terdeteksi";
+  try {
+    var activeSs = SpreadsheetApp.getActiveSpreadsheet();
+    if (activeSs) ssName = activeSs.getName();
+  } catch(eSs) {}
+  
   return ContentService.createTextOutput(JSON.stringify({
     success: true,
-    message: "Google Apps Script Web App APAR K3 aktif & siap menerima data! ✅",
+    message: "Google Apps Script Web App APAR K3 aktif & terhubung! ✅",
+    spreadsheetName: ssName,
     timestamp: new Date().toISOString()
   })).setMimeType(ContentService.MimeType.JSON);
 }
@@ -465,7 +481,7 @@ function doPost(e) {
     if (!ss) {
       return ContentService.createTextOutput(JSON.stringify({
         success: false,
-        error: "Spreadsheet tidak terdeteksi. Pastikan Apps Script dibuat dari menu Extensions > Apps Script di dalam Google Sheets Anda!"
+        error: "Spreadsheet tidak terdeteksi. Harap buat script melalui menu Extensions > Apps Script di dalam Google Sheets Anda!"
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -483,9 +499,10 @@ function doPost(e) {
         "Keterangan", "Link Foto Drive", "Pemeriksa"
       ]);
       sheet.getRange(1, 1, 1, 18).setFontWeight("bold").setBackground("#0f172a").setFontColor("#ffffff");
+      try { sheet.setFrozenRows(1); } catch(eF) {}
     }
 
-    // A. FITUR KIRIM MASSAL / SINKRONISASI MASSAL (sync_all)
+    // 1. FITUR SINKRONISASI MASSAL (sync_all)
     if (data.action === "sync_all" || Array.isArray(data.items)) {
       var items = data.items || [];
       if (!Array.isArray(items) && typeof items === "object") {
@@ -494,7 +511,6 @@ function doPost(e) {
         items = temp;
       }
 
-      // Kosongkan baris data lama (mulai baris ke-2), tetap pertahankan Header
       var lastRow = sheet.getLastRow();
       if (lastRow > 1) {
         sheet.getRange(2, 1, lastRow - 1, 18).clearContent();
@@ -509,11 +525,10 @@ function doPost(e) {
         if (item.foto && typeof item.foto === "string" && item.foto.indexOf("base64,") !== -1) {
           try {
             var folderName = "Foto_Eviden_APAR";
-            var folder = DriveApp.getFoldersByName(folderName).hasNext() ? 
-                         DriveApp.getFoldersByName(folderName).next() : 
-                         DriveApp.createFolder(folderName);
+            var folders = DriveApp.getFoldersByName(folderName);
+            var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
             var base64Data = item.foto.split("base64,")[1];
-            var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), "image/jpeg", "EVIDEN_" + (item.kode || item.id || "APAR") + "_" + i + ".jpg");
+            var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), "image/jpeg", "EVIDEN_" + (item.kode || item.id || "APAR") + "_" + Date.now() + "_" + i + ".jpg");
             var file = folder.createFile(blob);
             file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
             photoUrl = file.getUrl();
@@ -521,6 +536,8 @@ function doPost(e) {
             if (photoUrl === "-") photoUrl = toSafeCell(item.photoUrl);
           }
         }
+
+        var photoCellVal = (photoUrl !== "-" && String(photoUrl).indexOf("http") === 0) ? '=HYPERLINK("' + photoUrl + '", "👁️ Lihat Foto Eviden")' : photoUrl;
 
         rowsToAdd.push([
           toSafeCell(item.tanggal || new Date().toLocaleString("id-ID")),
@@ -539,7 +556,7 @@ function doPost(e) {
           toSafeCell(item.tagLabel || item.tag),
           toSafeCell(item.status || "OK"),
           toSafeCell(item.keterangan),
-          photoUrl,
+          photoCellVal,
           toSafeCell(item.pemeriksa || "Petugas")
         ]);
       }
@@ -550,12 +567,12 @@ function doPost(e) {
 
       return ContentService.createTextOutput(JSON.stringify({
         success: true,
-        message: "Berhasil sinkronisasi massal " + rowsToAdd.length + " data inspeksi ke Google Sheets!",
+        message: "Berhasil sinkronisasi massal " + rowsToAdd.length + " data inspeksi ke Google Sheets & Drive!",
         totalSynced: rowsToAdd.length
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // B. FITUR HAPUS TUGAS (action === "delete")
+    // 2. FITUR HAPUS TUGAS (action === "delete")
     if (data.action === "delete") {
       var targetKode = String(data.kode || data.id || "").trim().toLowerCase();
       if (targetKode) {
@@ -576,14 +593,13 @@ function doPost(e) {
       }
     }
 
-    // C. SIMPAN / UPDATE TUNGGAL (UPSERT REAL-TIME)
+    // 3. SIMPAN / UPDATE TUNGGAL (UPSERT REAL-TIME)
     var photoUrl = "-";
     if (data.foto && typeof data.foto === "string" && data.foto.indexOf("base64,") !== -1) {
       try {
         var folderName = "Foto_Eviden_APAR";
-        var folder = DriveApp.getFoldersByName(folderName).hasNext() ? 
-                     DriveApp.getFoldersByName(folderName).next() : 
-                     DriveApp.createFolder(folderName);
+        var folders = DriveApp.getFoldersByName(folderName);
+        var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
         var base64Data = data.foto.split("base64,")[1];
         var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), "image/jpeg", "EVIDEN_" + (data.kode || data.id || "APAR") + "_" + Date.now() + ".jpg");
         var file = folder.createFile(blob);
@@ -594,9 +610,11 @@ function doPost(e) {
       photoUrl = toSafeCell(data.photoUrl);
     }
 
+    var photoCellVal = (photoUrl !== "-" && String(photoUrl).indexOf("http") === 0) ? '=HYPERLINK("' + photoUrl + '", "👁️ Lihat Foto Eviden")' : photoUrl;
+
     var targetKodeNew = String(data.kode || data.id || "").trim().toLowerCase();
     var existingRowIndex = -1;
-    if (targetKodeNew) {
+    if (targetKodeNew && targetKodeNew !== "test_koneksi") {
       var allRows = sheet.getDataRange().getValues();
       for (var r = 1; r < allRows.length; r++) {
         if (String(allRows[r][1] || "").trim().toLowerCase() === targetKodeNew) {
@@ -623,7 +641,7 @@ function doPost(e) {
       toSafeCell(data.tagLabel || data.tag),
       toSafeCell(data.status || "OK"),
       toSafeCell(data.keterangan),
-      photoUrl,
+      photoCellVal,
       toSafeCell(data.pemeriksa || "Petugas")
     ];
 
@@ -726,6 +744,47 @@ function doPost(e) {
       </div>
     </div>
   </div>
+
+  <!-- ======================= NOTIFICATION CENTER MODAL ======================= -->
+  <div id="notificationModal" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 560px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.4rem;">🔔</span>
+          <div>
+            <h2 style="font-size: 1.15rem; margin: 0;">Log &amp; Notifikasi Real-Time</h2>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0;">Pantau tugas masuk, riwayat inspeksi, dan aktivitas seluruh user</p>
+          </div>
+        </div>
+        <button type="button" id="btnCloseNotificationModal" class="btn-close-modal">✕</button>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px 0; padding-bottom: 8px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 8px;">
+        <span id="notifTotalCountLabel" style="font-size: 0.78rem; font-weight: 700; color: var(--text-muted);">0 Notifikasi Tercatat</span>
+        <div style="display: flex; gap: 6px;">
+          <button type="button" id="btnMarkAllNotifsRead" class="btn btn-secondary btn-sm" style="font-size: 0.74rem; padding: 4px 10px;">
+            ✓ Tandai Semua Dibaca
+          </button>
+          <button type="button" id="btnClearAllNotifs" class="btn btn-danger btn-sm" style="font-size: 0.74rem; padding: 4px 10px;">
+            🗑️ Bersihkan Log
+          </button>
+        </div>
+      </div>
+
+      <div id="notificationFeed" class="notif-feed">
+        <!-- Live Notifications Populated Here -->
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+        <button type="button" id="btnCloseNotificationModal2" class="btn btn-ghost" style="padding: 6px 14px; font-size: 0.82rem;">
+          Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Toast Notifications -->
+  <div id="notifToastContainer" class="notif-toast-container"></div>
 
 </div>
 
@@ -857,11 +916,172 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ===========================================================
-   3. Unified Real-Time Engine (Server-Sent Events + Firestore)
+   3. Unified Real-Time Engine (Server-Sent Events + Notifications + Firestore)
    =========================================================== */
 let sseSource = null;
 let unsubscribeFirestore = null;
 let syncHeartbeat = null;
+
+let NOTIFICATIONS = [];
+let UNREAD_NOTIF_COUNT = 0;
+
+function updateNotificationBadge() {
+  const badge = document.getElementById('notifBadge');
+  if (!badge) return;
+  if (UNREAD_NOTIF_COUNT > 0) {
+    badge.textContent = UNREAD_NOTIF_COUNT > 99 ? '99+' : UNREAD_NOTIF_COUNT;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+function showNotificationToast(notif) {
+  if (!notif) return;
+  const container = document.getElementById('notifToastContainer');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = 'notif-toast';
+  
+  let icon = '🔔';
+  if (notif.type === 'task_submitted') icon = '📋';
+  if (notif.type === 'task_deleted' || notif.type === 'system_reset') icon = '🗑️';
+  if (notif.type === 'user_created' || notif.type === 'user_updated') icon = '👤';
+  if (notif.type === 'user_deleted') icon = '⚠️';
+
+  toast.innerHTML = `
+    <div style="display: flex; gap: 10px; align-items: flex-start;">
+      <span style="font-size: 1.3rem; line-height: 1;">${icon}</span>
+      <div style="flex: 1;">
+        <h4 style="margin: 0; font-size: 0.85rem; font-weight: 700; color: #f8fafc;">${escapeHtml(notif.title || 'Notifikasi Baru')}</h4>
+        <p style="margin: 3px 0 0 0; font-size: 0.76rem; color: #cbd5e1; line-height: 1.35;">${escapeHtml(notif.message || '')}</p>
+        <span style="display: inline-block; margin-top: 4px; font-size: 0.68rem; color: #94a3b8;">Baru saja • Real-Time</span>
+      </div>
+      <button type="button" style="background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 0.9rem; padding: 0 4px;" onclick="this.closest('.notif-toast').remove()">✕</button>
+    </div>
+  `;
+
+  toast.onclick = (e) => {
+    if (e.target.tagName !== 'BUTTON') {
+      openNotificationModal();
+      toast.remove();
+    }
+  };
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    if (toast.parentElement) {
+      toast.style.animation = 'toastSlideOut 0.3s ease-in forwards';
+      setTimeout(() => toast.remove(), 320);
+    }
+  }, 5500);
+}
+
+function renderNotificationFeed() {
+  const feed = document.getElementById('notificationFeed');
+  const countLabel = document.getElementById('notifTotalCountLabel');
+  if (!feed) return;
+
+  if (countLabel) {
+    countLabel.textContent = `${NOTIFICATIONS.length} Notifikasi Tercatat (${UNREAD_NOTIF_COUNT} Baru)`;
+  }
+
+  if (NOTIFICATIONS.length === 0) {
+    feed.innerHTML = `
+      <div style="text-align: center; padding: 36px 16px; color: var(--text-muted);">
+        <div style="font-size: 2.2rem; margin-bottom: 8px; opacity: 0.6;">🔕</div>
+        <p style="margin: 0; font-size: 0.88rem; font-weight: 600;">Belum ada log notifikasi</p>
+        <p style="margin: 4px 0 0 0; font-size: 0.76rem;">Setiap ada tugas masuk, data dihapus, atau aktivitas K3 akan otomatis muncul di sini secara real-time.</p>
+      </div>
+    `;
+    return;
+  }
+
+  feed.innerHTML = NOTIFICATIONS.map(n => {
+    let icon = '🔔';
+    if (n.type === 'task_submitted') icon = '📋';
+    if (n.type === 'task_deleted' || n.type === 'system_reset') icon = '🗑️';
+    if (n.type === 'user_created' || n.type === 'user_updated') icon = '👤';
+    if (n.type === 'user_deleted') icon = '⚠️';
+
+    const isUnread = !n.is_read;
+    const timeStr = n.created_at ? new Date(n.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : 'Baru saja';
+
+    return `
+      <div class="notif-item ${isUnread ? 'unread' : ''}" data-id="${n.id || ''}">
+        <div style="display: flex; gap: 10px; align-items: flex-start;">
+          <div class="notif-item-icon">${icon}</div>
+          <div style="flex: 1;">
+            <div class="notif-item-title">
+              <span>${escapeHtml(n.title || 'Notifikasi')}</span>
+              ${isUnread ? '<span class="notif-unread-dot"></span>' : ''}
+            </div>
+            <div class="notif-item-msg">${escapeHtml(n.message || '')}</div>
+            <div class="notif-item-time">
+              <span>⏰ ${timeStr}</span>
+              ${n.pemeriksa ? `<span>• 👤 ${escapeHtml(n.pemeriksa)}</span>` : ''}
+              ${n.kode ? `<span style="background: var(--bg-hover); padding: 1px 6px; border-radius: 4px; font-weight: 600;">Kode ${escapeHtml(n.kode)}</span>` : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openNotificationModal() {
+  const modal = document.getElementById('notificationModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  renderNotificationFeed();
+
+  if (UNREAD_NOTIF_COUNT > 0) {
+    markAllNotificationsAsRead(false);
+  }
+}
+
+function closeNotificationModal() {
+  const modal = document.getElementById('notificationModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function markAllNotificationsAsRead(showToastNotice = true) {
+  try {
+    NOTIFICATIONS.forEach(n => n.is_read = 1);
+    UNREAD_NOTIF_COUNT = 0;
+    updateNotificationBadge();
+    renderNotificationFeed();
+
+    await fetch('/api/notifications/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+
+    if (showToastNotice) {
+      showStatus('Semua notifikasi telah ditandai sebagai dibaca. ✅', 'ok');
+    }
+  } catch (e) {
+    console.warn('Error marking notifications as read:', e);
+  }
+}
+
+async function clearAllNotificationsLog() {
+  if (!confirm('Apakah Anda yakin ingin membersihkan semua riwayat log notifikasi?')) return;
+  try {
+    NOTIFICATIONS = [];
+    UNREAD_NOTIF_COUNT = 0;
+    updateNotificationBadge();
+    renderNotificationFeed();
+
+    await fetch('/api/notifications', { method: 'DELETE' });
+    showStatus('Seluruh riwayat log notifikasi telah dibersihkan. 🗑️', 'ok');
+  } catch (e) {
+    console.warn('Error clearing notifications:', e);
+  }
+}
 
 function isFirebaseConfigured() {
   return typeof firebaseConfig !== 'undefined'
@@ -896,6 +1116,13 @@ function initServerEventSource() {
             const total = Object.keys(LOG).length;
             setDbStatus('online', `Real-Time Aktif (${total} data)`);
           }
+
+          if (Array.isArray(payload.notifications)) {
+            NOTIFICATIONS = payload.notifications;
+            UNREAD_NOTIF_COUNT = payload.unreadCount !== undefined ? payload.unreadCount : (payload.unreadNotificationCount || 0);
+            updateNotificationBadge();
+            renderNotificationFeed();
+          }
         } else if (payload.type === 'update' && payload.entry) {
           // Instant broadcast from another user or device!
           const entry = payload.entry;
@@ -918,6 +1145,14 @@ function initServerEventSource() {
 
           const count = payload.totalLogs || Object.keys(LOG).length;
           setDbStatus('online', `Real-Time Aktif (${count} data)`);
+
+          if (payload.notification) {
+            NOTIFICATIONS.unshift(payload.notification);
+            UNREAD_NOTIF_COUNT++;
+            updateNotificationBadge();
+            showNotificationToast(payload.notification);
+            renderNotificationFeed();
+          }
         } else if (payload.type === 'delete_single' && payload.docId) {
           const targetId = String(payload.docId).trim().toLowerCase();
           for (const k in LOG) {
@@ -937,11 +1172,43 @@ function initServerEventSource() {
 
           const count = payload.totalLogs !== undefined ? payload.totalLogs : Object.keys(LOG).length;
           setDbStatus('online', `Real-Time Aktif (${count} data)`);
+
+          if (payload.notification) {
+            NOTIFICATIONS.unshift(payload.notification);
+            UNREAD_NOTIF_COUNT++;
+            updateNotificationBadge();
+            showNotificationToast(payload.notification);
+            renderNotificationFeed();
+          }
         } else if (payload.type === 'reset') {
           LOG = {};
           saveLocalLog(LOG);
           renderRiwayat();
           renderProgress();
+
+          if (payload.notification) {
+            NOTIFICATIONS.unshift(payload.notification);
+            UNREAD_NOTIF_COUNT++;
+            updateNotificationBadge();
+            showNotificationToast(payload.notification);
+            renderNotificationFeed();
+          }
+        } else if (payload.type === 'notification' && payload.notification) {
+          NOTIFICATIONS.unshift(payload.notification);
+          UNREAD_NOTIF_COUNT++;
+          updateNotificationBadge();
+          showNotificationToast(payload.notification);
+          renderNotificationFeed();
+        } else if (payload.type === 'notifications_read') {
+          NOTIFICATIONS.forEach(n => n.is_read = 1);
+          UNREAD_NOTIF_COUNT = payload.unreadCount || 0;
+          updateNotificationBadge();
+          renderNotificationFeed();
+        } else if (payload.type === 'notifications_cleared') {
+          NOTIFICATIONS = [];
+          UNREAD_NOTIF_COUNT = 0;
+          updateNotificationBadge();
+          renderNotificationFeed();
         } else if (payload.type === 'user_deleted' && payload.deletedUserId) {
           const delId = String(payload.deletedUserId).trim().toLowerCase();
           const delEmail = payload.deletedUserEmail ? String(payload.deletedUserEmail).trim().toLowerCase() : '';
@@ -2686,14 +2953,14 @@ function refreshKondisiButtons() {
 }
 
 /* ===========================================================
-   7. Photo Compression & Upload (Eviden)
+   7. Photo Compression & Auto-Timestamp Watermarking (Eviden)
    =========================================================== */
 const fotoInput = document.getElementById('fotoInput');
 const fotoPreview = document.getElementById('fotoPreview');
 const btnUploadFoto = document.getElementById('btnUploadFoto');
 const btnHapusFoto = document.getElementById('btnHapusFoto');
 
-function compressImage(file, maxDim = 1280, quality = 0.85) {
+function compressImage(file, maxDim = 1280, quality = 0.85, metaInfo = {}) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();
@@ -2715,6 +2982,82 @@ function compressImage(file, maxDim = 1280, quality = 0.85) {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, width, height);
+
+      // ===== DRAW PROFESSIONAL TIMESTAMP & APAR WATERMARK =====
+      const now = new Date();
+      const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+      const dateStr = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')} WIB`;
+
+      const kode = metaInfo.kode || (currentEntry ? (currentEntry.kode || currentEntry.id) : 'APAR');
+      const ruangan = metaInfo.ruangan || (currentEntry ? currentEntry.ruangan : '') || 'Lokasi Terdaftar';
+      const gedung = metaInfo.gedung || (currentEntry ? currentEntry.gedung : '') || '';
+      const petugas = metaInfo.petugas || (currentUser ? (currentUser.name || currentUser.email) : 'Petugas Lapangan');
+
+      const bannerH = Math.max(72, Math.round(height * 0.14));
+      const bannerY = height - bannerH;
+
+      // Dark gradient footer banner
+      const gradient = ctx.createLinearGradient(0, bannerY - 10, 0, height);
+      gradient.addColorStop(0, 'rgba(15, 23, 42, 0)');
+      gradient.addColorStop(0.25, 'rgba(15, 23, 42, 0.90)');
+      gradient.addColorStop(1, 'rgba(15, 23, 42, 0.98)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, bannerY - 10, width, bannerH + 10);
+
+      // Accent color bar
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(0, bannerY - 1, width * 0.35, 3);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(width * 0.35, bannerY - 1, width * 0.65, 3);
+
+      const baseFont = Math.max(13, Math.round(width / 42));
+      const padX = Math.max(16, Math.round(width * 0.025));
+
+      // 1. Date & Time Timestamp
+      ctx.font = `bold ${Math.round(baseFont * 1.15)}px sans-serif`;
+      ctx.fillStyle = '#fef08a';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetX = 1;
+      ctx.shadowOffsetY = 1;
+      ctx.fillText(`📅 ${dateStr} • ⏰ ${timeStr}`, padX, bannerY + Math.round(bannerH * 0.34));
+
+      // 2. APAR Code & Location
+      ctx.font = `bold ${baseFont}px sans-serif`;
+      ctx.fillStyle = '#ffffff';
+      const loc = gedung ? `${ruangan} (${gedung})` : ruangan;
+      ctx.fillText(`🏷️ KODE APAR: ${kode}  |  📍 ${loc}`, padX, bannerY + Math.round(bannerH * 0.64));
+
+      // 3. Inspector Info & Verified Tag
+      ctx.font = `normal ${Math.round(baseFont * 0.88)}px sans-serif`;
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`👤 PEMERIKSA: ${petugas}  •  🛡️ EVIDEN K3 RESMI`, padX, bannerY + Math.round(bannerH * 0.90));
+
+      // Right Stamp Tag
+      const stampW = Math.max(115, Math.round(width * 0.22));
+      const stampH = Math.max(24, Math.round(baseFont * 1.5));
+      const stampX = width - stampW - padX;
+      const stampY = bannerY + 12;
+
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.25)';
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(stampX, stampY, stampW, stampH, 5);
+      } else {
+        ctx.rect(stampX, stampY, stampW, stampH);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = `bold ${Math.round(baseFont * 0.8)}px sans-serif`;
+      ctx.fillStyle = '#34d399';
+      ctx.textAlign = 'center';
+      ctx.fillText('VERIFIED EVIDEN', stampX + (stampW / 2), stampY + (stampH * 0.68));
+      ctx.textAlign = 'left';
+
       resolve(canvas.toDataURL('image/jpeg', quality));
     };
     img.onerror = reject;
@@ -2729,15 +3072,21 @@ fotoInput.addEventListener('change', async () => {
   if (!file) return;
   try {
     btnUploadFoto.disabled = true;
-    btnUploadFoto.textContent = '⏳ Memproses foto...';
-    currentEntry.foto = await compressImage(file);
+    btnUploadFoto.textContent = '⏳ Memproses & Stempel Foto...';
+    const meta = {
+      kode: currentEntry ? (currentEntry.kode || currentEntry.id) : 'APAR',
+      ruangan: currentEntry ? currentEntry.ruangan : '',
+      gedung: currentEntry ? currentEntry.gedung : '',
+      petugas: currentUser ? (currentUser.name || currentUser.email) : 'Petugas'
+    };
+    currentEntry.foto = await compressImage(file, 1280, 0.85, meta);
     fotoPreview.src = currentEntry.foto;
     fotoPreview.classList.add('show');
     fotoPreview.style.cursor = 'pointer';
-    fotoPreview.title = 'Klik untuk melihat foto ukuran penuh';
+    fotoPreview.title = 'Klik untuk melihat foto ukuran penuh (dengan stempel timestamp)';
     fotoPreview.onclick = () => openPhotoModal(currentEntry.foto, 'Foto Eviden APAR Kode ' + (currentEntry.kode || ''), 'Ruangan: ' + (currentEntry.ruangan || ''));
     btnHapusFoto.classList.remove('hidden');
-    showStatus('Foto bukti berhasil dipasang 📷', 'ok');
+    showStatus('Foto bukti berhasil diproses & distempel tanggal/waktu! 📷✨', 'ok');
   } catch (e) {
     console.error(e);
     showStatus('Gagal memproses foto, coba lagi.', 'err');
@@ -2936,6 +3285,18 @@ document.getElementById('btnSimpan').addEventListener('click', async () => {
     const firstInvalid = document.querySelector('.kondisi-item.invalid');
     if (firstInvalid) {
       firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return;
+  }
+
+  // ===== VALIDASI WAJIB: BUKTI FOTO EVIDEN WAJIB DIUPLOAD =====
+  if (!currentEntry.foto || typeof currentEntry.foto !== 'string' || currentEntry.foto.trim() === '') {
+    showStatus(`⚠️ FOTO BUKTI WAJIB DIUPLOAD! Tugas pemeriksaan APAR Kode ${currentEntry.kode || ''} tidak dapat dikumpulkan sebelum mengambil/mengunggah foto bukti fisik.`, 'err');
+    const fotoBox = document.querySelector('.foto-upload-box');
+    if (fotoBox) {
+      fotoBox.classList.add('invalid-shake');
+      fotoBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => fotoBox.classList.remove('invalid-shake'), 1200);
     }
     return;
   }
@@ -3985,6 +4346,39 @@ if (btnCopyScriptCode) {
     } catch (e) {
       showStatus('Gagal menyalin otomatis, silakan blok teks kode secara manual.', 'info');
     }
+  });
+}
+
+// -------------------------------------------------------------
+// Notification Center Controls
+// -------------------------------------------------------------
+const btnNotifications = document.getElementById('btnNotifications');
+const btnCloseNotificationModal = document.getElementById('btnCloseNotificationModal');
+const btnCloseNotificationModal2 = document.getElementById('btnCloseNotificationModal2');
+const btnMarkAllNotifsRead = document.getElementById('btnMarkAllNotifsRead');
+const btnClearAllNotifs = document.getElementById('btnClearAllNotifs');
+
+if (btnNotifications) {
+  btnNotifications.addEventListener('click', openNotificationModal);
+}
+if (btnCloseNotificationModal) {
+  btnCloseNotificationModal.addEventListener('click', closeNotificationModal);
+}
+if (btnCloseNotificationModal2) {
+  btnCloseNotificationModal2.addEventListener('click', closeNotificationModal);
+}
+if (btnMarkAllNotifsRead) {
+  btnMarkAllNotifsRead.addEventListener('click', () => markAllNotificationsAsRead(true));
+}
+if (btnClearAllNotifs) {
+  btnClearAllNotifs.addEventListener('click', clearAllNotificationsLog);
+}
+
+// Close notification modal when clicking outside
+const notificationModal = document.getElementById('notificationModal');
+if (notificationModal) {
+  notificationModal.addEventListener('click', (e) => {
+    if (e.target === notificationModal) closeNotificationModal();
   });
 }
 

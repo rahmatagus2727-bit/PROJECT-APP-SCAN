@@ -73,6 +73,18 @@ function createTables(db) {
       deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      type TEXT,
+      title TEXT,
+      message TEXT,
+      kode TEXT,
+      pemeriksa TEXT,
+      details TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      is_read INTEGER DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS audit_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       action TEXT,
@@ -457,6 +469,71 @@ function broadcastUpdate(payload) {
   });
 }
 
+function addNotificationToSqlite(notif) {
+  if (!sqliteDb) return null;
+  try {
+    const id = notif.id || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const type = notif.type || 'info';
+    const title = notif.title || 'Notifikasi';
+    const message = notif.message || '';
+    const kode = notif.kode || '';
+    const pemeriksa = notif.pemeriksa || '';
+    const details = typeof notif.details === 'string' ? notif.details : JSON.stringify(notif.details || {});
+    const createdAt = notif.created_at || new Date().toISOString();
+    const isRead = notif.is_read ? 1 : 0;
+
+    sqliteDb.run(`
+      INSERT OR REPLACE INTO notifications (id, type, title, message, kode, pemeriksa, details, created_at, is_read)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [id, type, title, message, kode, pemeriksa, details, createdAt, isRead]);
+
+    persistSqliteToDisk();
+
+    const fullNotif = { id, type, title, message, kode, pemeriksa, details, created_at: createdAt, is_read: isRead };
+    
+    // Instant broadcast notification to all users in real-time
+    broadcastUpdate({
+      type: 'notification',
+      notification: fullNotif,
+      unreadCount: getUnreadNotificationCount(),
+      timestamp: Date.now()
+    });
+
+    return fullNotif;
+  } catch (err) {
+    console.warn('Error adding notification to SQLite:', err);
+    return null;
+  }
+}
+
+function getRecentNotificationsFromSqlite(limit = 100) {
+  if (!sqliteDb) return [];
+  try {
+    const res = sqliteDb.exec(`SELECT id, type, title, message, kode, pemeriksa, details, created_at, is_read FROM notifications ORDER BY datetime(created_at) DESC, rowid DESC LIMIT ${limit}`);
+    if (!res || !res[0]) return [];
+    const cols = res[0].columns;
+    return res[0].values.map(row => {
+      const obj = {};
+      cols.forEach((col, idx) => {
+        obj[col] = row[idx];
+      });
+      return obj;
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+function getUnreadNotificationCount() {
+  if (!sqliteDb) return 0;
+  try {
+    const res = sqliteDb.exec(`SELECT COUNT(*) FROM notifications WHERE is_read = 0`);
+    return res[0]?.values[0]?.[0] || 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
 // -------------------------------------------------------------
 // Real-Time Server-Sent Events (SSE) Endpoint
 // -------------------------------------------------------------
@@ -472,12 +549,16 @@ app.get('/api/apar_log/events', (req, res) => {
   sseClients.push(newClient);
 
   const logs = getAllInspectionsFromSqlite();
+  const notifs = getRecentNotificationsFromSqlite(30);
+  const unreadCount = getUnreadNotificationCount();
 
-  // Send initial snapshot
+  // Send initial snapshot with inspections and notifications
   const initialPayload = {
     type: 'init',
     count: Object.keys(logs).length,
     logs: logs,
+    notifications: notifs,
+    unreadCount: unreadCount,
     timestamp: Date.now()
   };
   res.write(`data: ${JSON.stringify(initialPayload)}\n\n`);
@@ -495,6 +576,47 @@ app.get('/api/apar_log/events', (req, res) => {
     clearInterval(keepAliveInterval);
     sseClients = sseClients.filter(c => c.id !== clientId);
   });
+});
+
+// Notification REST Endpoints
+app.get('/api/notifications', (req, res) => {
+  const notifs = getRecentNotificationsFromSqlite(100);
+  const unreadCount = getUnreadNotificationCount();
+  res.json({
+    success: true,
+    notifications: notifs,
+    unreadCount: unreadCount
+  });
+});
+
+app.post('/api/notifications/read', (req, res) => {
+  if (sqliteDb) {
+    try {
+      const { id } = req.body || {};
+      if (id) {
+        sqliteDb.run("UPDATE notifications SET is_read = 1 WHERE id = ?", [id]);
+      } else {
+        sqliteDb.run("UPDATE notifications SET is_read = 1");
+      }
+      persistSqliteToDisk();
+    } catch (e) {
+      console.warn('Error marking notifications as read:', e);
+    }
+  }
+  const unreadCount = getUnreadNotificationCount();
+  broadcastUpdate({ type: 'notifications_read', unreadCount, timestamp: Date.now() });
+  res.json({ success: true, unreadCount });
+});
+
+app.delete('/api/notifications', (req, res) => {
+  if (sqliteDb) {
+    try {
+      sqliteDb.run("DELETE FROM notifications");
+      persistSqliteToDisk();
+    } catch (e) {}
+  }
+  broadcastUpdate({ type: 'notifications_cleared', unreadCount: 0, timestamp: Date.now() });
+  res.json({ success: true, message: 'Semua log notifikasi telah dibersihkan.' });
 });
 
 // -------------------------------------------------------------
@@ -520,6 +642,26 @@ app.post('/api/apar_log', (req, res) => {
   upsertInspectionInSqlite(entry);
 
   const logs = getAllInspectionsFromSqlite();
+
+  // Create real-time notification for all users & admin
+  const petugasName = entry.pemeriksa || 'Petugas Lapangan';
+  const lokasiStr = [entry.ruangan, entry.gedung ? `Gd. ${entry.gedung}` : ''].filter(Boolean).join(' - ') || 'Lokasi Terdaftar';
+  
+  addNotificationToSqlite({
+    type: 'task_submitted',
+    title: `📋 Tugas Masuk: APAR Kode ${docId}`,
+    message: `Pemeriksaan APAR Kode ${docId} (${lokasiStr}) telah selesai dikerjakan oleh ${petugasName}. Status: ${entry.status || 'OK'}.`,
+    kode: docId,
+    pemeriksa: petugasName,
+    details: JSON.stringify({
+      kode: docId,
+      ruangan: entry.ruangan || '',
+      gedung: entry.gedung || '',
+      status: entry.status || 'OK',
+      pemeriksa: petugasName,
+      hasPhoto: !!entry.foto
+    })
+  });
 
   // Instant broadcast to all connected devices in realtime via SSE
   broadcastUpdate({
@@ -575,6 +717,16 @@ app.delete('/api/apar_log/:id', (req, res) => {
 
   const currentLogs = getAllInspectionsFromSqlite();
 
+  // Create real-time notification about deleted task
+  addNotificationToSqlite({
+    type: 'task_deleted',
+    title: `🗑️ Data Dihapus: APAR Kode ${cleanId}`,
+    message: `Data pemeriksaan APAR Kode ${cleanId} telah dihapus dari riwayat sistem.`,
+    kode: cleanId,
+    pemeriksa: req.query.pemeriksa || 'Admin/Petugas',
+    details: JSON.stringify({ kode: cleanId })
+  });
+
   // Instant broadcast via SSE to ALL connected clients
   broadcastUpdate({
     type: 'delete_single',
@@ -602,6 +754,16 @@ app.delete('/api/apar_log', (req, res) => {
   if (fs.existsSync(LOG_FILE)) {
     try { fs.writeFileSync(LOG_FILE, '{}', 'utf-8'); } catch (e) {}
   }
+
+  addNotificationToSqlite({
+    type: 'system_reset',
+    title: `⚠️ Riwayat Direset: Seluruh Data Dikosongkan`,
+    message: `Seluruh riwayat pemeriksaan APAR di database telah direset oleh Administrator K3.`,
+    kode: 'ALL',
+    pemeriksa: 'Admin K3',
+    details: '{}'
+  });
+
   broadcastUpdate({ type: 'reset', timestamp: Date.now() });
   res.json({ success: true, message: 'Semua log SQLite berhasil direset.' });
 });
