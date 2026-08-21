@@ -66,6 +66,13 @@ function createTables(db) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS deleted_users (
+      id TEXT PRIMARY KEY,
+      email TEXT,
+      name TEXT,
+      deleted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS audit_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       action TEXT,
@@ -134,7 +141,18 @@ function restoreFromBackups(db) {
     const userCheck = db.exec("SELECT COUNT(*) as count FROM users");
     const userCount = userCheck[0]?.values[0]?.[0] || 0;
     
-    // Always ensure Admin and initial petugas exist
+    let deletedSet = new Set();
+    try {
+      const delRes = db.exec("SELECT id, email, name FROM deleted_users");
+      if (delRes && delRes[0] && delRes[0].values) {
+        delRes[0].values.forEach(([dId, dEmail, dName]) => {
+          if (dId) deletedSet.add(String(dId).toLowerCase().trim());
+          if (dEmail) deletedSet.add(String(dEmail).toLowerCase().trim());
+          if (dName) deletedSet.add(String(dName).toLowerCase().trim());
+        });
+      }
+    } catch (e) {}
+
     const defaultUsers = [
       { id: 'user_admin', email: 'admin@apar.id', name: 'Admin K3 / Pemeliharaan', password: 'admin', role: 'admin' },
       { id: 'user_rizky', email: 'rizky@apar.id', name: 'Rizky (Petugas Utama)', password: '123', role: 'petugas' },
@@ -143,8 +161,14 @@ function restoreFromBackups(db) {
     ];
 
     defaultUsers.forEach(u => {
-      db.run(`INSERT OR IGNORE INTO users (id, email, name, password, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-        [u.id, (u.email || u.name).toLowerCase(), u.name, u.password || '123', u.role || 'petugas', u.createdAt || new Date().toISOString()]);
+      const cleanId = String(u.id).toLowerCase().trim();
+      const cleanEmail = String(u.email || '').toLowerCase().trim();
+      const cleanName = String(u.name || '').toLowerCase().trim();
+
+      if (!deletedSet.has(cleanId) && !deletedSet.has(cleanEmail) && !deletedSet.has(cleanName)) {
+        db.run(`INSERT OR IGNORE INTO users (id, email, name, password, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          [u.id, cleanEmail, u.name, u.password || '123', u.role || 'petugas', u.createdAt || new Date().toISOString()]);
+      }
     });
   } catch (uErr) {
     console.warn('User setup warning:', uErr);
@@ -641,7 +665,7 @@ app.get('/api/users', (req, res) => {
     return res.json({ success: true, users: [] });
   }
   try {
-    const resUsers = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC");
+    const resUsers = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users) AND lower(email) NOT IN (SELECT lower(email) FROM deleted_users) ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC");
     if (!resUsers || !resUsers[0]) {
       return res.json({ success: true, users: [] });
     }
@@ -673,6 +697,11 @@ app.post('/api/users', (req, res) => {
 
   if (sqliteDb) {
     try {
+      // Remove from deleted_users if re-creating
+      sqliteDb.run("DELETE FROM deleted_users WHERE lower(id) = ? OR lower(email) = ? OR lower(name) = ?", [
+        newId.toLowerCase(), cleanEmail, cleanName.toLowerCase()
+      ]);
+
       sqliteDb.run("INSERT OR REPLACE INTO users (id, email, name, password, role) VALUES (?, ?, ?, ?, ?)", [
         newId, cleanEmail, cleanName, cleanPass, cleanRole
       ]);
@@ -680,7 +709,7 @@ app.post('/api/users', (req, res) => {
 
       // Update USERS_FILE
       try {
-        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users");
+        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users)");
         if (all && all[0]) {
           const list = all[0].values.map(([id, email, name, password, role, created_at]) => ({
             id, email, name, password, role, created_at
@@ -714,29 +743,54 @@ app.delete('/api/users/:id', (req, res) => {
     return res.status(400).json({ success: false, message: 'ID Petugas wajib disertakan.' });
   }
 
-  if (userId === 'user_admin' || userId.toLowerCase().includes('admin')) {
+  const cleanTarget = String(userId).trim().toLowerCase();
+
+  if (cleanTarget === 'user_admin' || cleanTarget === 'admin@apar.id' || cleanTarget === 'admin') {
     return res.status(400).json({ success: false, message: 'Akun Admin utama tidak boleh dihapus.' });
   }
 
   if (sqliteDb) {
     try {
-      sqliteDb.run("DELETE FROM users WHERE id = ? OR email = ?", [userId, userId]);
+      let userEmail = cleanTarget;
+      let userName = cleanTarget;
+
+      // Find details before deleting
+      const userRow = sqliteDb.exec("SELECT id, email, name FROM users WHERE lower(id) = ? OR lower(email) = ? OR lower(name) = ?", [cleanTarget, cleanTarget, cleanTarget]);
+      if (userRow && userRow[0] && userRow[0].values && userRow[0].values.length > 0) {
+        const [uId, uEm, uNm] = userRow[0].values[0];
+        if (uId) sqliteDb.run("INSERT OR REPLACE INTO deleted_users (id, email, name) VALUES (?, ?, ?)", [String(uId).toLowerCase(), String(uEm || '').toLowerCase(), String(uNm || '').toLowerCase()]);
+        if (uEm) userEmail = String(uEm).toLowerCase().trim();
+        if (uNm) userName = String(uNm).toLowerCase().trim();
+      }
+
+      sqliteDb.run("INSERT OR REPLACE INTO deleted_users (id, email, name) VALUES (?, ?, ?)", [
+        cleanTarget, userEmail, userName
+      ]);
+
+      sqliteDb.run("DELETE FROM users WHERE lower(id) = ? OR lower(email) = ? OR lower(name) = ?", [
+        cleanTarget, cleanTarget, cleanTarget
+      ]);
+
       persistSqliteToDisk();
 
       // Update USERS_FILE
       try {
-        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users");
+        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users WHERE lower(id) NOT IN (SELECT lower(id) FROM deleted_users)");
         if (all && all[0]) {
           const list = all[0].values.map(([id, email, name, password, role, created_at]) => ({
             id, email, name, password, role, created_at
           }));
           fs.writeFileSync(USERS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+        } else {
+          fs.writeFileSync(USERS_FILE, '[]', 'utf-8');
         }
       } catch (e) {}
 
       broadcastUpdate({
         type: 'user_deleted',
-        deletedUserId: userId,
+        deletedUserId: cleanTarget,
+        deletedUserEmail: userEmail,
+        deletedUserName: userName,
         timestamp: Date.now()
       });
 
@@ -762,6 +816,9 @@ app.post('/api/auth/register', (req, res) => {
   
   if (sqliteDb) {
     try {
+      // Clear from deleted_users if re-registering
+      sqliteDb.run("DELETE FROM deleted_users WHERE lower(email) = ? OR lower(name) = ?", [cleanEmail, cleanName.toLowerCase()]);
+
       const existing = sqliteDb.exec("SELECT id FROM users WHERE lower(email) = ? OR lower(name) = ?", [cleanEmail, cleanName.toLowerCase()]);
       if (existing && existing[0] && existing[0].values.length > 0) {
         sqliteDb.run("UPDATE users SET name = ?, password = ?, role = ? WHERE lower(email) = ?", [
@@ -804,7 +861,20 @@ app.post('/api/auth/login', (req, res) => {
   
   if (sqliteDb) {
     try {
-      // Find user by email, name, id, or username prefix (case-insensitive)
+      // 1. Check if user was deleted
+      const isDeleted = sqliteDb.exec(
+        "SELECT id, name FROM deleted_users WHERE lower(id) = ? OR lower(email) = ? OR lower(name) = ?",
+        [cleanInput, cleanInput, cleanInput]
+      );
+      if (isDeleted && isDeleted[0] && isDeleted[0].values.length > 0) {
+        return res.status(401).json({
+          success: false,
+          isDeleted: true,
+          message: '⚠️ AKUN TIDAK TERSEDIA!\n\nAkun Anda telah dihapus oleh Admin K3 dan tidak dapat digunakan lagi.'
+        });
+      }
+
+      // 2. Find user by email, name, id, or username prefix (case-insensitive)
       const check = sqliteDb.exec(
         `SELECT id, email, name, password, role FROM users 
          WHERE lower(email) = ? 
@@ -818,15 +888,27 @@ app.post('/api/auth/login', (req, res) => {
       );
 
       if (!check || !check[0] || check[0].values.length === 0) {
-        // STRICT: User does not exist! Reject!
         return res.status(401).json({
           success: false,
-          message: 'Akun tidak ditemukan! Pastikan Nama/ID benar atau hubungi Admin untuk didaftarkan.'
+          message: 'Akun tidak ditemukan! Pastikan Nama/ID benar atau hubungi Admin K3 untuk didaftarkan.'
         });
       }
 
       const [id, uEmail, uName, uPass, uRole] = check[0].values[0];
       const savedPass = String(uPass || '').trim();
+
+      // Check if user ID or email is in deleted_users
+      const checkDeletedSub = sqliteDb.exec(
+        "SELECT id FROM deleted_users WHERE lower(id) = ? OR lower(email) = ?",
+        [String(id).toLowerCase(), String(uEmail || '').toLowerCase()]
+      );
+      if (checkDeletedSub && checkDeletedSub[0] && checkDeletedSub[0].values.length > 0) {
+        return res.status(401).json({
+          success: false,
+          isDeleted: true,
+          message: '⚠️ AKUN TIDAK TERSEDIA!\n\nAkun ini telah dihapus oleh Administrator K3.'
+        });
+      }
 
       // STRICT password verification
       if (savedPass !== inputPass) {
