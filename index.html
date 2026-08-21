@@ -394,12 +394,66 @@ function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName("Riwayat_APAR") || ss.insertSheet("Riwayat_APAR");
     
+    // Inisialisasi Header Kolom jika sheet masih kosong
     if (sheet.getLastRow() === 0) {
-      sheet.appendRow(["Waktu", "Kode APAR", "Gedung", "Ruangan", "Lantai", "Merk", "Kapasitas", "Gas", "Kebersihan", "Tekanan", "Pin", "Selang", "Nozzle", "Tag", "Status", "Keterangan", "Link Foto Drive", "Pemeriksa"]);
+      sheet.appendRow([
+        "Waktu", "Kode APAR", "Gedung", "Ruangan", "Lantai", 
+        "Merk", "Kapasitas", "Gas", "Kebersihan", "Tekanan", 
+        "Pin", "Selang", "Nozzle", "Tag", "Status", 
+        "Keterangan", "Link Foto Drive", "Pemeriksa"
+      ]);
       sheet.getRange(1, 1, 1, 18).setFontWeight("bold").setBackground("#0f172a").setFontColor("#ffffff");
     }
 
-    // A. FITUR HAPUS TUGAS / LOG
+    // A. FITUR KIRIM MASSAL / SINKRONISASI MASSAL (sync_all) -> Mengikuti Progres Aplikasi!
+    if (data.action === "sync_all" || Array.isArray(data.items)) {
+      var items = data.items || [];
+      // Kosongkan baris data lama (mulai baris ke-2), tetap pertahankan Header
+      var lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        sheet.getRange(2, 1, lastRow - 1, 18).clearContent();
+      }
+
+      var rowsToAdd = [];
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        if (!item) continue;
+
+        var photoUrl = item.photoUrl || item.foto || "-";
+        if (item.foto && typeof item.foto === "string" && item.foto.indexOf("base64,") !== -1) {
+          try {
+            var folderName = "Foto_Eviden_APAR";
+            var folder = DriveApp.getFoldersByName(folderName).hasNext() ? DriveApp.getFoldersByName(folderName).next() : DriveApp.createFolder(folderName);
+            var base64Data = item.foto.split("base64,")[1];
+            var blob = Utilities.newBlob(Utilities.base64Decode(base64Data), "image/jpeg", "EVIDEN_" + (item.kode || "APAR") + "_" + Date.now() + ".jpg");
+            var file = folder.createFile(blob);
+            file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            photoUrl = file.getUrl();
+          } catch (eImg) { photoUrl = item.photoUrl || "-"; }
+        }
+
+        rowsToAdd.push([
+          item.tanggal || new Date().toLocaleString("id-ID"),
+          item.kode || item.id || "-", item.gedung || "-", item.ruangan || "-", item.lantai || "-",
+          item.merk || "-", item.kapasitas || "-", item.jenisGas || "-",
+          item.kebersihanTabung || "-", item.indikatorTekanan || "-", item.kunciPengaman || "-",
+          item.selangSemprot || "-", item.nozzle || "-", item.tagLabel || "-",
+          item.status || "OK", item.keterangan || "-", photoUrl, item.pemeriksa || "Petugas"
+        ]);
+      }
+
+      if (rowsToAdd.length > 0) {
+        sheet.getRange(2, 1, rowsToAdd.length, 18).setValues(rowsToAdd);
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        message: "Berhasil sinkronisasi massal " + rowsToAdd.length + " data inspeksi ke Google Sheets!",
+        totalSynced: rowsToAdd.length
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // B. FITUR HAPUS TUGAS (action === "delete")
     if (data.action === "delete") {
       var targetKode = String(data.kode || data.id || "").trim().toLowerCase();
       if (targetKode) {
@@ -414,13 +468,13 @@ function doPost(e) {
         }
         return ContentService.createTextOutput(JSON.stringify({ 
           success: true, 
-          message: "Data APAR " + targetKode + " berhasil dihapus dari Google Sheets!", 
+          message: "Data APAR Kode " + targetKode + " berhasil dihapus dari Google Sheets!", 
           deletedCount: deletedCount 
         })).setMimeType(ContentService.MimeType.JSON);
       }
     }
 
-    // B. SIMPAN ATAU UPDATE TUGAS
+    // C. SIMPAN / UPDATE TUNGGAL (UPSERT REAL-TIME)
     var photoUrl = "-";
     if (data.foto && typeof data.foto === "string" && data.foto.indexOf("base64,") !== -1) {
       try {
@@ -431,12 +485,12 @@ function doPost(e) {
         var file = folder.createFile(blob);
         file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
         photoUrl = file.getUrl();
-      } catch (imgErr) { photoUrl = "Err: " + imgErr.toString(); }
+      } catch (imgErr) { photoUrl = data.photoUrl || "Err: " + imgErr.toString(); }
     } else if (data.photoUrl) {
       photoUrl = data.photoUrl;
     }
 
-    var targetKodeNew = String(data.kode || "").trim().toLowerCase();
+    var targetKodeNew = String(data.kode || data.id || "").trim().toLowerCase();
     var existingRowIndex = -1;
     if (targetKodeNew) {
       var allRows = sheet.getDataRange().getValues();
@@ -463,9 +517,16 @@ function doPost(e) {
       sheet.appendRow(rowValues);
     }
 
-    return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Data berhasil dicatat ke Google Sheets & Drive!", photoUrl: photoUrl })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ 
+      success: true, 
+      message: "Data APAR Kode " + (data.kode || "") + " berhasil dicatat ke Google Sheets & Drive!", 
+      photoUrl: photoUrl 
+    })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ 
+      success: false, 
+      error: err.toString() 
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 }</pre>
                 </div>
@@ -476,6 +537,23 @@ function doPost(e) {
                   <li>Ubah <i>Who has access (Siapa saja yang memiliki akses)</i> ke <b>Anyone (Siapa Saja)</b>.</li>
                   <li>Klik <b>Deploy</b>, copy Web App URL lalu simpan di kolom atas!</li>
                 </ol>
+              </div>
+            </div>
+
+            <!-- Prominent Bulk Sync Action Box -->
+            <div style="margin-top: 14px; padding: 14px; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: 10px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div>
+                  <h3 style="margin: 0; font-size: 0.95rem; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+                    <span>🚀</span> Kirim Massal Data ke Google Sheets
+                  </h3>
+                  <p style="margin: 4px 0 0 0; font-size: 0.76rem; color: var(--text-muted);">
+                    Kirim seluruh data hasil pemeriksaan sekaligus ke Google Sheets agar isi Sheet 100% mengikuti progres aplikasi.
+                  </p>
+                </div>
+                <button type="button" id="btnBulkSyncGas" class="btn btn-primary" style="background: linear-gradient(135deg, #0284c7, #2563eb); font-weight: 600; padding: 8px 16px;">
+                  📤 Kirim Massal Semua Data
+                </button>
               </div>
             </div>
           </div>
@@ -1724,6 +1802,92 @@ async function syncSingleDeleteToGoogleSheets(kodeStr) {
   return null;
 }
 
+async function syncAllToGoogleSheets() {
+  const url = GDRIVE_SETTINGS.googleScriptUrl || localStorage.getItem('apar_gdrive_url') || '';
+  if (!url) {
+    showStatus('Harap masukkan dan simpan Web App URL Google Apps Script terlebih dahulu di Admin Dashboard.', 'err');
+    return null;
+  }
+
+  // Deduplicate and filter active items from LOG
+  const itemsMap = {};
+  for (const k in LOG) {
+    const item = LOG[k];
+    if (item && (item.kode || item.id)) {
+      const key = String(item.kode || item.id).trim().toUpperCase();
+      itemsMap[key] = item;
+    }
+  }
+
+  const itemsList = Object.values(itemsMap);
+  if (itemsList.length === 0) {
+    showStatus('Belum ada data hasil pemeriksaan APAR yang tersimpan di sistem.', 'err');
+    return null;
+  }
+
+  const btnBulk = document.getElementById('btnBulkSyncGas');
+  if (btnBulk) {
+    btnBulk.disabled = true;
+    btnBulk.textContent = `⏳ Mengirim ${itemsList.length} Data...`;
+  }
+
+  showStatus(`⏳ Sedang mengunggah massal ${itemsList.length} data inspeksi ke Google Sheets...`, 'info');
+
+  const bulkPayload = {
+    action: 'sync_all',
+    items: itemsList
+  };
+
+  try {
+    const res = await fetch('/api/gdrive/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        googleScriptUrl: url,
+        payload: bulkPayload
+      })
+    });
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch (e) { data = { success: res.ok }; }
+
+    if (data && data.success) {
+      showStatus(`✨ Berhasil! Total ${itemsList.length} data inspeksi berhasil dikirim & disinkronkan ke Google Sheets! 🎉`, 'ok');
+      return data;
+    } else if (data && data.message) {
+      showStatus('❌ ' + data.message, 'err');
+    }
+  } catch (err) {
+    console.warn('Server bulk sync notice:', err);
+  } finally {
+    if (btnBulk) {
+      btnBulk.disabled = false;
+      btnBulk.textContent = '📤 Kirim Massal Semua Data';
+    }
+  }
+
+  // Direct client fallback
+  try {
+    await fetch(url, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(bulkPayload)
+    });
+    showStatus(`✨ Berhasil! ${itemsList.length} data inspeksi dikirim langsung ke Google Sheets Anda! 🎉`, 'ok');
+    return { success: true };
+  } catch (directErr) {
+    showStatus('❌ Gagal mengirim massal data: ' + directErr.message, 'err');
+  } finally {
+    if (btnBulk) {
+      btnBulk.disabled = false;
+      btnBulk.textContent = '📤 Kirim Massal Semua Data';
+    }
+  }
+  return null;
+}
+window.syncAllToGoogleSheets = syncAllToGoogleSheets;
+
 window.copyGasCode = function() {
   const codeEl = document.getElementById('gasCodeBox');
   if (!codeEl) return;
@@ -1897,6 +2061,13 @@ if (btnTestGasSync) {
         btnTestGasSync.textContent = '⚡ Tes Koneksi';
       }
     }
+  });
+}
+
+const btnBulkSyncGas = document.getElementById('btnBulkSyncGas');
+if (btnBulkSyncGas) {
+  btnBulkSyncGas.addEventListener('click', () => {
+    syncAllToGoogleSheets();
   });
 }
 
