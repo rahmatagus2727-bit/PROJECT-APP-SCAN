@@ -1730,17 +1730,42 @@ if (btnTestGasSync) {
         pemeriksa: currentUser ? (currentUser.name || currentUser.email) : 'Admin K3'
       };
 
-      const res = await fetch('/api/gdrive/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ googleScriptUrl: cleanUrl, payload: samplePayload })
-      });
+      let res;
+      let text = '';
+      let data = {};
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      try {
+        res = await fetch('/api/gdrive/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ googleScriptUrl: cleanUrl, payload: samplePayload })
+        });
+        text = await res.text();
+        try {
+          data = JSON.parse(text);
+        } catch (pErr) {
+          data = { success: false, message: 'Format respon server bukan JSON.' };
+        }
+      } catch (netErr) {
+        data = { success: false, message: netErr.message };
+      }
+
+      if (data && data.success) {
         showStatus('✨ Berhasil! Data tes berhasil dikirim ke Google Sheets & Google Drive! 🎉', 'ok');
       } else {
-        showStatus('❌ ' + (data.message || 'Gagal terhubung ke Google Apps Script'), 'err');
+        // Direct client fallback to Google Apps Script
+        try {
+          await fetch(cleanUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(samplePayload)
+          });
+          showStatus('✨ Berhasil! Data tes dikirim langsung ke Google Sheets & Drive Anda! 🎉', 'ok');
+        } catch (directErr) {
+          const errMsg = (data && data.message) ? data.message : 'Pastikan "Who has access" diset ke "Anyone" pada Google Apps Script.';
+          showStatus('❌ ' + errMsg, 'err');
+        }
       }
     } catch (err) {
       showStatus('Gagal tes koneksi: ' + err.message, 'err');

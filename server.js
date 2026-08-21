@@ -874,33 +874,26 @@ async function callGoogleAppsScript(targetUrl, payload) {
   }
 
   try {
-    let currentUrl = cleanUrl;
-    let response;
-    let attempts = 0;
+    // Standard fetch with redirect: 'follow' automatically handles Google's 302 redirect
+    // by converting to GET for script.googleusercontent.com echo endpoint
+    let response = await fetch(cleanUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: bodyStr,
+      redirect: 'follow'
+    });
 
-    // Manually follow redirects to preserve POST method
-    while (attempts < 5) {
-      attempts++;
-      response = await fetch(currentUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8'
-        },
-        body: bodyStr,
-        redirect: 'manual'
-      });
+    let text = await response.text();
 
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        const redirectUrl = response.headers.get('location');
-        if (redirectUrl) {
-          currentUrl = redirectUrl;
-          continue;
-        }
-      }
-      break;
+    // If fetch didn't follow redirect automatically
+    if ([301, 302, 303, 307, 308].includes(response.status) && response.headers.get('location')) {
+      const redirectUrl = response.headers.get('location');
+      response = await fetch(redirectUrl, { method: 'GET' });
+      text = await response.text();
     }
 
-    const text = await response.text();
     return {
       status: response.status,
       ok: response.ok || response.status === 200,
