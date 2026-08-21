@@ -1,20 +1,46 @@
 rules_version = '2';
+// ==========================================================================
+// PENTING: file ini hanya SALINAN LOKAL. Firebase TIDAK membaca file ini
+// dari repo/HP kamu. Supaya berlaku, isi rules ini harus di-COPY-PASTE ke:
+//   Firebase Console (console.firebase.google.com)
+//   > pilih project "apar-fss" > Build > Firestore Database > tab "Rules"
+//   > paste isi di bawah ini > klik tombol "Publish" (WAJIB, bukan cuma save).
+// Kalau tombol "Publish" belum pernah diklik, atau project masih pakai
+// "test mode" yang sudah lewat 30 hari, semua request read/write akan
+// ditolak (permission-denied) dan aplikasi otomatis fallback ke localStorage
+// per-HP saja — inilah yang bikin progres tidak muncul di HP petugas lain.
+// ==========================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 1. Koleksi log inspeksi APAR
+    // 1. Koleksi log inspeksi APAR (hasil scan & checklist tiap petugas)
     match /apar_log/{document=**} {
       allow read, write: if true;
     }
 
-    // 2. Koleksi daftar akun petugas & admin
+    // 2. Koleksi daftar akun petugas & admin K3
     match /users/{document=**} {
       allow read, write: if true;
     }
 
-    // 3. Fallback aturan umum untuk semua koleksi
+    // 3. Fallback aturan umum untuk koleksi lain (mis. settings/gdrive config)
     match /{document=**} {
       allow read, write: if true;
     }
   }
 }
+
+// ==========================================================================
+// Catatan keamanan (rekomendasi):
+// Aturan di atas TERBUKA PENUH (siapa pun yang tahu apiKey/URL project bisa
+// baca & tulis) karena aplikasi ini belum pakai Firebase Authentication
+// (login petugas/admin masih dicek manual di kode, bukan lewat Firebase Auth).
+// Ini WAJAR untuk tool internal tim kecil, TAPI:
+//   - Jangan sebarluaskan link aplikasi ke publik.
+//   - Kalau ke depannya butuh lebih aman (misal supaya hanya email tertentu
+//     yang bisa hapus data), aktifkan Firebase Authentication (Email/Password)
+//     dulu di Firebase Console, baru rules bisa diganti jadi:
+//       allow read: if true;
+//       allow write: if request.auth != null;
+//     supaya minimal orang harus login dulu sebelum bisa menulis data.
+// ==========================================================================

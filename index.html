@@ -649,6 +649,10 @@ function startFirestoreSync() {
       },
       (err) => {
         console.warn('Firestore onSnapshot warning:', err);
+        if (String(err.code || '').includes('permission-denied')) {
+          setDbStatus('offline', 'Firestore ditolak (cek Rules & Publish)');
+          showStatus('⚠️ Firestore menolak akses baca. Buka Firebase Console → Firestore Database → Rules, pastikan aturan sudah di-Publish.', 'err');
+        }
       }
     );
   } catch (err) {
@@ -683,6 +687,7 @@ function initFirebase() {
       });
     } catch (e) {
       console.warn('Firebase init notice:', e);
+      setDbStatus('offline', 'Firebase gagal terhubung');
     }
   }
 
@@ -1661,6 +1666,10 @@ async function persistEntry(entry) {
       console.log('✅ Firestore sync sukses untuk docId:', docId);
     } catch (e) {
       console.warn('Firestore sync notice:', e);
+      if (String(e.code || '').includes('permission-denied')) {
+        setDbStatus('offline', 'Firestore ditolak (cek Rules & Publish)');
+        showStatus('⚠️ Gagal simpan ke Firebase (Akses Ditolak). Data ini HANYA tersimpan di HP ini sampai Rules Firestore di-Publish di Firebase Console. Petugas/admin lain belum bisa melihatnya.', 'err');
+      }
     }
   }
 
