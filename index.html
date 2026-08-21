@@ -669,11 +669,11 @@ function initServerEventSource() {
         if (payload.type === 'init') {
           // Initial snapshot of all inspections from server
           if (payload.logs && typeof payload.logs === 'object') {
-            LOG = { ...loadLocalLog(), ...payload.logs };
+            LOG = payload.logs;
             saveLocalLog(LOG);
             renderRiwayat();
             renderProgress();
-            const total = Object.keys(payload.logs).length;
+            const total = Object.keys(LOG).length;
             setDbStatus('online', `Real-Time Aktif (${total} data)`);
           }
         } else if (payload.type === 'update' && payload.entry) {
@@ -699,15 +699,24 @@ function initServerEventSource() {
           const count = payload.totalLogs || Object.keys(LOG).length;
           setDbStatus('online', `Real-Time Aktif (${count} data)`);
         } else if (payload.type === 'delete_single' && payload.docId) {
-          const targetId = String(payload.docId).trim();
+          const targetId = String(payload.docId).trim().toLowerCase();
           for (const k in LOG) {
-            if (k === targetId || (LOG[k] && (String(LOG[k].kode || '').trim() === targetId || String(LOG[k].id || '').trim() === targetId))) {
+            if (k.toLowerCase() === targetId || (LOG[k] && (String(LOG[k].kode || '').trim().toLowerCase() === targetId || String(LOG[k].id || '').trim().toLowerCase() === targetId))) {
               delete LOG[k];
             }
           }
           saveLocalLog(LOG);
           renderRiwayat();
           renderProgress();
+
+          if (currentEntry && String(currentEntry.kode || currentEntry.id).trim().toLowerCase() === targetId) {
+            resultStatusBadge.textContent = 'Belum Diperiksa';
+            resultStatusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+            resultStatusBadge.style.color = '#f87171';
+          }
+
+          const count = payload.totalLogs !== undefined ? payload.totalLogs : Object.keys(LOG).length;
+          setDbStatus('online', `Real-Time Aktif (${count} data)`);
         } else if (payload.type === 'reset') {
           LOG = {};
           saveLocalLog(LOG);
@@ -747,7 +756,7 @@ async function fetchFreshCloudData(showNotification = false) {
     if (res.ok) {
       const data = await res.json();
       if (data && data.logs) {
-        LOG = { ...loadLocalLog(), ...data.logs };
+        LOG = data.logs;
         saveLocalLog(LOG);
         loadedCount = Object.keys(data.logs).length;
       }
@@ -766,14 +775,16 @@ async function fetchFreshCloudData(showNotification = false) {
         snapshot = await db.collection(COLLECTION_NAME).get();
       }
 
+      const freshFsLogs = {};
       snapshot.forEach(doc => {
         const d = doc.data();
         if (d) {
-          LOG[doc.id] = d;
-          if (d.id) LOG[String(d.id).trim()] = d;
-          if (d.kode) LOG[String(d.kode).trim()] = d;
+          freshFsLogs[doc.id] = d;
+          if (d.id) freshFsLogs[String(d.id).trim()] = d;
+          if (d.kode) freshFsLogs[String(d.kode).trim()] = d;
         }
       });
+      LOG = freshFsLogs;
       saveLocalLog(LOG);
       if (snapshot.size > loadedCount) loadedCount = snapshot.size;
     } catch (e) {
@@ -806,7 +817,7 @@ function startFirestoreSync() {
   try {
     unsubscribeFirestore = db.collection(COLLECTION_NAME).onSnapshot(
       (snapshot) => {
-        const fresh = { ...loadLocalLog() };
+        const fresh = {};
         snapshot.forEach(doc => {
           const d = doc.data();
           if (d) {
@@ -2576,11 +2587,12 @@ function renderRiwayat() {
 async function deleteSingleLogEntry(targetKode) {
   if (!targetKode) return;
   const kodeStr = String(targetKode).trim();
+  const cleanKey = kodeStr.toLowerCase();
 
   const isConfirmed = confirm(
     `Apakah Anda yakin ingin menghapus data hasil pemeriksaan APAR Kode "${kodeStr}"?\n\n` +
     `• Data akan dihapus dari riwayat pemeriksaan.\n` +
-    `• Progres pemeriksaan akan otomatis berkurang.\n` +
+    `• Progres pemeriksaan di seluruh user akan berkurang secara real-time.\n` +
     `• Data di Google Sheets & Drive akan terhapus otomatis.`
   );
 
@@ -2590,36 +2602,43 @@ async function deleteSingleLogEntry(targetKode) {
 
   // 1. Delete from in-memory LOG and localStorage
   for (const k in LOG) {
-    if (k === kodeStr || (LOG[k] && (String(LOG[k].kode || '').trim() === kodeStr || String(LOG[k].id || '').trim() === kodeStr))) {
+    if (k.toLowerCase() === cleanKey || (LOG[k] && (String(LOG[k].kode || '').trim().toLowerCase() === cleanKey || String(LOG[k].id || '').trim().toLowerCase() === cleanKey))) {
       delete LOG[k];
     }
   }
   saveLocalLog(LOG);
 
-  // 2. Delete from Backend Server SQLite
+  // 2. Instantly update UI on current screen
+  renderRiwayat();
+  renderProgress();
+
+  if (currentEntry && String(currentEntry.kode || currentEntry.id).trim().toLowerCase() === cleanKey) {
+    resultStatusBadge.textContent = 'Belum Diperiksa';
+    resultStatusBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+    resultStatusBadge.style.color = '#f87171';
+  }
+
+  // 3. Delete from Backend Server SQLite (broadcasts SSE 'delete_single' to all connected users)
   try {
     await fetch(`/api/apar_log/${encodeURIComponent(kodeStr)}`, { method: 'DELETE' });
   } catch (err) {
     console.warn('Backend server delete warning:', err);
   }
 
-  // 3. Delete from Firebase Firestore if connected
+  // 4. Delete from Firebase Firestore if connected
   if (db && isFirebaseConfigured()) {
     try {
       await db.collection(COLLECTION_NAME).doc(kodeStr).delete();
+      await db.collection(COLLECTION_NAME).doc(cleanKey).delete().catch(() => {});
     } catch (fsErr) {
       console.warn('Firestore delete warning:', fsErr);
     }
   }
 
-  // 4. Delete from Google Sheets & Drive via Apps Script
+  // 5. Delete from Google Sheets & Drive via Apps Script
   syncSingleDeleteToGoogleSheets(kodeStr).catch(e => console.warn('Gdrive delete sync:', e));
 
-  // 5. Instantly refresh UI, Progress counters, and Bento Stats
-  renderRiwayat();
-  renderProgress();
-
-  showStatus(`✅ Data pemeriksaan APAR Kode ${kodeStr} berhasil dihapus. Progres diperbarui!`, 'ok');
+  showStatus(`✅ Data pemeriksaan APAR Kode ${kodeStr} berhasil dihapus dari seluruh user & database!`, 'ok');
 }
 window.deleteSingleLogEntry = deleteSingleLogEntry;
 

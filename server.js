@@ -234,10 +234,17 @@ function syncJsonBackup(docId, entry) {
         currentLogs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf-8')) || {};
       } catch (e) {}
     }
+    const cleanId = String(docId).trim().toLowerCase();
     if (entry) {
       currentLogs[docId] = entry;
     } else {
       delete currentLogs[docId];
+      for (const k in currentLogs) {
+        if (k.toLowerCase() === cleanId || 
+            (currentLogs[k] && (String(currentLogs[k].kode || '').trim().toLowerCase() === cleanId || String(currentLogs[k].id || '').trim().toLowerCase() === cleanId))) {
+          delete currentLogs[k];
+        }
+      }
     }
     fs.writeFileSync(LOG_FILE, JSON.stringify(currentLogs, null, 2), 'utf-8');
   } catch (e) {
@@ -527,10 +534,14 @@ app.delete('/api/apar_log/:id', (req, res) => {
   }
 
   const cleanId = String(docId).trim();
+  const lowerCleanId = cleanId.toLowerCase();
+
+  // Sync / remove from JSON backup file
+  syncJsonBackup(cleanId, null);
 
   if (sqliteDb) {
     try {
-      sqliteDb.run("DELETE FROM inspections WHERE doc_id = ? OR kode = ?", [cleanId, cleanId]);
+      sqliteDb.run("DELETE FROM inspections WHERE id = ? OR kode = ? OR LOWER(id) = ? OR LOWER(kode) = ?", [cleanId, cleanId, lowerCleanId, lowerCleanId]);
       sqliteDb.run(`INSERT INTO audit_logs (action, details, pemeriksa) VALUES ('DELETE_SINGLE', ?, 'Petugas/Admin')`, [`Hapus log ${cleanId}`]);
       persistSqliteToDisk();
     } catch (err) {
@@ -538,11 +549,15 @@ app.delete('/api/apar_log/:id', (req, res) => {
     }
   }
 
-  delete logs[cleanId];
-  delete logs[cleanId.toLowerCase()];
-  delete logs[cleanId.toUpperCase()];
+  const currentLogs = getAllInspectionsFromSqlite();
 
-  broadcastUpdate({ type: 'delete_single', docId: cleanId, timestamp: Date.now() });
+  // Instant broadcast via SSE to ALL connected clients
+  broadcastUpdate({
+    type: 'delete_single',
+    docId: cleanId,
+    totalLogs: Object.keys(currentLogs).length,
+    timestamp: Date.now()
+  });
 
   // Auto delete in Google Sheets if URL configured
   const targetScriptUrl = APP_SETTINGS.googleScriptUrl || '';
@@ -550,7 +565,7 @@ app.delete('/api/apar_log/:id', (req, res) => {
     callGoogleAppsScript(targetScriptUrl, { action: 'delete', kode: cleanId, id: cleanId }).catch(() => {});
   }
 
-  res.json({ success: true, message: `Log ${cleanId} berhasil dihapus.` });
+  res.json({ success: true, message: `Log ${cleanId} berhasil dihapus.`, totalLogs: Object.keys(currentLogs).length });
 });
 
 // Reset log if needed
@@ -559,6 +574,9 @@ app.delete('/api/apar_log', (req, res) => {
     sqliteDb.run("DELETE FROM inspections");
     sqliteDb.run(`INSERT INTO audit_logs (action, details, pemeriksa) VALUES ('RESET_ALL', 'Semua riwayat dihapus', 'Admin')`);
     persistSqliteToDisk();
+  }
+  if (fs.existsSync(LOG_FILE)) {
+    try { fs.writeFileSync(LOG_FILE, '{}', 'utf-8'); } catch (e) {}
   }
   broadcastUpdate({ type: 'reset', timestamp: Date.now() });
   res.json({ success: true, message: 'Semua log SQLite berhasil direset.' });
