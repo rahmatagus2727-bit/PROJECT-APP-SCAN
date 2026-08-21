@@ -332,6 +332,92 @@ service cloud.firestore {
             </div>
           </div>
 
+          <!-- Card 3: Integrasi Google Sheets & Google Drive -->
+          <div class="card">
+            <h2><span>📊</span> Hubungkan Google Sheets &amp; Drive</h2>
+            <p class="hint">Hubungkan aplikasi APAR ke Google Sheets &amp; Google Drive agar laporan inspeksi dan foto eviden otomatis tersimpan ke Cloud Google milik Anda.</p>
+
+            <form id="formGasConfig" style="margin-top: 12px;">
+              <div class="form-group">
+                <label for="gasUrlInput">Web App URL Google Apps Script *</label>
+                <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec" required />
+                <span style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-top: 4px;">Pastikan berakhiran <b>/exec</b> (bukan /edit).</span>
+              </div>
+
+              <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <button type="submit" id="btnSaveGasUrl" class="btn btn-primary" style="flex: 1;">
+                  💾 Simpan URL
+                </button>
+                <button type="button" id="btnTestGasSync" class="btn btn-secondary" style="flex: 1;">
+                  ⚡ Tes Koneksi
+                </button>
+              </div>
+            </form>
+
+            <!-- Collapsible Tutorial Google Apps Script Code -->
+            <div style="margin-top: 14px; padding: 12px; background: rgba(30, 41, 59, 0.6); border: 1px dashed var(--border); border-radius: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="document.getElementById('gasScriptGuide').classList.toggle('hidden');">
+                <span style="font-size: 0.82rem; font-weight: 600; color: #38bdf8;">📜 Panduan &amp; Kode Script Google Sheets + Drive</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">Klik Buka/Tutup</span>
+              </div>
+              <div id="gasScriptGuide" class="hidden" style="margin-top: 10px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5;">
+                <p style="margin: 0 0 6px 0; color: var(--text-main);"><strong>Langkah-Langkah Pembuatan di Google Sheets:</strong></p>
+                <ol style="padding-left: 18px; margin: 0 0 8px 0;">
+                  <li>Buka <a href="https://sheets.new" target="_blank" style="color:#38bdf8;">Google Sheets baru</a> di browser.</li>
+                  <li>Di menu atas, pilih <b>Extensions (Ekstensi)</b> &gt; <b>Apps Script</b>.</li>
+                  <li>Hapus semua kode lama, lalu <b>paste (tempel)</b> kode di bawah ini:</li>
+                </ol>
+
+                <div style="position: relative; margin-bottom: 8px;">
+                  <button type="button" onclick="copyGasCode()" style="position: absolute; right: 8px; top: 8px; background: #38bdf8; color: #000; border: none; padding: 3px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; cursor: pointer;">📋 Copy Kode</button>
+                  <pre id="gasCodeBox" style="background:#0f172a; padding:10px; border-radius:6px; font-size:0.7rem; color:#4ade80; overflow-x:auto; max-height:200px; margin:0;">function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("Riwayat_APAR") || ss.insertSheet("Riwayat_APAR");
+    
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(["Waktu", "Kode APAR", "Gedung", "Ruangan", "Lantai", "Merk", "Kapasitas", "Gas", "Kebersihan", "Tekanan", "Pin", "Selang", "Nozzle", "Tag", "Status", "Keterangan", "Link Foto Drive", "Pemeriksa"]);
+      sheet.getRange(1, 1, 1, 18).setFontWeight("bold").setBackground("#0f172a").setFontColor("#ffffff");
+    }
+
+    var photoUrl = "-";
+    if (data.foto && data.foto.indexOf("base64,") !== -1) {
+      try {
+        var folder = DriveApp.getFoldersByName("Foto_Eviden_APAR").hasNext() ? DriveApp.getFoldersByName("Foto_Eviden_APAR").next() : DriveApp.createFolder("Foto_Eviden_APAR");
+        var blob = Utilities.newBlob(Utilities.base64Decode(data.foto.split("base64,")[1]), "image/jpeg", "EVIDEN_" + (data.kode || "APAR") + "_" + Date.now() + ".jpg");
+        var file = folder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        photoUrl = file.getUrl();
+      } catch (imgErr) { photoUrl = "Err: " + imgErr.toString(); }
+    }
+
+    sheet.appendRow([
+      data.tanggal || new Date().toLocaleString("id-ID"),
+      data.kode || "-", data.gedung || "-", data.ruangan || "-", data.lantai || "-",
+      data.merk || "-", data.kapasitas || "-", data.jenisGas || "-",
+      data.kebersihanTabung || "-", data.indikatorTekanan || "-", data.kunciPengaman || "-",
+      data.selangSemprot || "-", data.nozzle || "-", data.tagLabel || "-",
+      data.status || "OK", data.keterangan || "-", photoUrl, data.pemeriksa || "Petugas"
+    ]);
+
+    return ContentService.createTextOutput(JSON.stringify({ success: true, photoUrl: photoUrl })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
+}</pre>
+                </div>
+
+                <ol start="4" style="padding-left: 18px; margin: 0 0 6px 0;">
+                  <li>Klik tombol <b>Deploy (Terapkan)</b> di kanan atas &gt; pilih <b>New deployment</b>.</li>
+                  <li>Pilih jenis: <b>Web App</b>.</li>
+                  <li>Ubah <i>Who has access (Siapa saja yang memiliki akses)</i> ke <b>Anyone (Siapa Saja)</b>.</li>
+                  <li>Klik <b>Deploy</b>, copy Web App URL lalu simpan di kolom atas!</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <!-- Right Column: Registered Users List -->
@@ -760,6 +846,60 @@ if (btnTogglePassword && authPassword) {
   });
 }
 
+async function checkFirestoreUserLogin(identifier, password) {
+  if (!db || !isFirebaseConfigured() || !identifier || !password) return null;
+  const cleanId = String(identifier).toLowerCase().trim();
+  const cleanPass = String(password).trim();
+
+  try {
+    const snapshot = await db.collection('users').get();
+    let foundUser = null;
+    snapshot.forEach(doc => {
+      const u = doc.data();
+      if (u) {
+        const uId = String(u.id || doc.id).toLowerCase();
+        const uEmail = String(u.email || '').toLowerCase();
+        const uName = String(u.name || '').toLowerCase();
+        const uPrefix = uEmail ? uEmail.split('@')[0] : '';
+
+        if (cleanId === uId || cleanId === uEmail || cleanId === uName || cleanId === uPrefix || (uName && uName.includes(cleanId))) {
+          const storedPass = String(u.password || '123').trim();
+          if (storedPass === cleanPass) {
+            foundUser = {
+              id: u.id || doc.id,
+              name: u.name || u.email,
+              email: u.email || '',
+              role: u.role || 'petugas',
+              password: storedPass
+            };
+          }
+        }
+      }
+    });
+
+    if (foundUser) {
+      try {
+        const local = JSON.parse(localStorage.getItem('apar_all_users') || '[]');
+        if (!local.some(x => x.id === foundUser.id || x.email === foundUser.email)) {
+          local.push(foundUser);
+          localStorage.setItem('apar_all_users', JSON.stringify(local));
+        }
+      } catch (e) {}
+
+      fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(foundUser)
+      }).catch(() => {});
+
+      return foundUser;
+    }
+  } catch (e) {
+    console.warn('Firestore user check notice:', e);
+  }
+  return null;
+}
+
 // Strict Login Handler
 if (authForm) {
   authForm.addEventListener('submit', async (e) => {
@@ -806,19 +946,28 @@ if (authForm) {
           loginSuccess = true;
           loggedUser = data.user;
         } else if (res.status === 401 && data && data.message) {
-          // Explicit credential rejection from server
-          showStatus(data.message, 'err');
-          if (authPassword) {
-            authPassword.focus();
-            authPassword.select();
+          // Check Firestore before rejecting outright
+          if (db && isFirebaseConfigured()) {
+            const fsUser = await checkFirestoreUserLogin(identifier, password);
+            if (fsUser) {
+              loginSuccess = true;
+              loggedUser = fsUser;
+            } else {
+              showStatus(data.message, 'err');
+              if (authPassword) { authPassword.focus(); authPassword.select(); }
+              return;
+            }
+          } else {
+            showStatus(data.message, 'err');
+            if (authPassword) { authPassword.focus(); authPassword.select(); }
+            return;
           }
-          return;
         }
       } catch (err) {
         console.warn('Server auth unreachable, attempting offline/cached validation:', err);
       }
 
-      // 2. Secondary: Offline / Resilient Local & Fallback Validation
+      // 2. Secondary: Offline / Resilient Local & Firestore Validation
       if (!loginSuccess) {
         const cleanId = identifier.toLowerCase().trim();
         const cleanPass = password.trim();
@@ -860,6 +1009,15 @@ if (authForm) {
               loggedUser = found;
             }
           } catch (e) {}
+
+          // Fallback to Firestore if still not logged in
+          if (!loginSuccess && db && isFirebaseConfigured()) {
+            const fsUser = await checkFirestoreUserLogin(identifier, password);
+            if (fsUser) {
+              loginSuccess = true;
+              loggedUser = fsUser;
+            }
+          }
         }
       }
 
@@ -992,13 +1150,46 @@ async function loadAdminUserList() {
       const data = await res.json();
       if (data && Array.isArray(data.users) && data.users.length) {
         cachedAdminUsers = data.users;
-        try {
-          localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
-        } catch (e) {}
       }
     }
   } catch (e) {
     console.warn('Could not fetch users from backend, loading local cache:', e);
+  }
+
+  // Fetch Firestore 'users' collection to merge accounts created on other devices!
+  if (db && isFirebaseConfigured()) {
+    try {
+      const snapshot = await db.collection('users').get();
+      const fsUsers = [];
+      snapshot.forEach(doc => {
+        const u = doc.data();
+        if (u) {
+          fsUsers.push({
+            id: u.id || doc.id,
+            name: u.name || u.email,
+            email: u.email || '',
+            password: u.password || '123',
+            role: u.role || 'petugas',
+            created_at: u.createdAt || u.syncedAt || new Date().toISOString()
+          });
+        }
+      });
+      if (fsUsers.length) {
+        if (!cachedAdminUsers) cachedAdminUsers = [];
+        fsUsers.forEach(fU => {
+          const idx = cachedAdminUsers.findIndex(cU => 
+            cU.id === fU.id || (cU.email && fU.email && cU.email.toLowerCase() === fU.email.toLowerCase())
+          );
+          if (idx >= 0) {
+            cachedAdminUsers[idx] = { ...cachedAdminUsers[idx], ...fU };
+          } else {
+            cachedAdminUsers.push(fU);
+          }
+        });
+      }
+    } catch (fsErr) {
+      console.warn('Firestore user fetch notice:', fsErr);
+    }
   }
 
   // Fallback to localStorage or default if empty
@@ -1014,6 +1205,10 @@ async function loadAdminUserList() {
       cachedAdminUsers = getDefaultUsersList();
     }
   }
+
+  try {
+    localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
+  } catch (e) {}
 
   renderAdminUserList();
 }
@@ -1139,7 +1334,7 @@ if (formAdminAddUser) {
         localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
       } catch (e) {}
 
-      // 3. Optional sync to Firebase Firestore (non-blocking with timeout 3s)
+      // 3. Optional sync to Firebase Firestore (includes password for multi-device login)
       if (db && isFirebaseConfigured()) {
         try {
           const docId = String(newUserObj.id || email).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1147,6 +1342,7 @@ if (formAdminAddUser) {
             id: newUserObj.id,
             name: newUserObj.name,
             email: newUserObj.email,
+            password: newUserObj.password || password || '123',
             role: newUserObj.role,
             createdAt: new Date().toISOString()
           }, { merge: true });
@@ -1203,7 +1399,7 @@ window.handleDeleteUser = async function(userId, userName) {
     localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
   } catch (e) {}
 
-  // Delete from Firestore if active (with short timeout)
+  // Delete from Firestore if active
   if (db && isFirebaseConfigured()) {
     try {
       const docId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1222,7 +1418,6 @@ window.handleDeleteUser = async function(userId, userName) {
 // Sync all users to Firebase Firestore (Resilient & Fail-Safe)
 if (btnSyncUsersToFirebase) {
   btnSyncUsersToFirebase.addEventListener('click', async () => {
-    // Ensure Firebase is initialized
     if (!isFirebaseConfigured()) {
       showStatus('⚠️ Firebase belum dikonfigurasi aktif. Silakan periksa firebase-config.js.', 'err');
       return;
@@ -1244,7 +1439,6 @@ if (btnSyncUsersToFirebase) {
     btnSyncUsersToFirebase.textContent = '⏳ Menyinkronkan ke Firebase...';
 
     try {
-      // 1. Gather users from Backend safely
       let usersToSync = [];
       try {
         const fetchController = new AbortController();
@@ -1263,7 +1457,6 @@ if (btnSyncUsersToFirebase) {
         console.warn('Backend fetch notice during sync:', fetchErr);
       }
 
-      // 2. Fallback to cached memory / local storage
       if (!usersToSync.length) {
         usersToSync = cachedAdminUsers || [];
       }
@@ -1276,7 +1469,6 @@ if (btnSyncUsersToFirebase) {
         usersToSync = getDefaultUsersList();
       }
 
-      // 3. Write each user to Firestore 'users' collection with strict timeout
       let syncedCount = 0;
       const batch = db.batch();
       for (const u of usersToSync) {
@@ -1287,6 +1479,7 @@ if (btnSyncUsersToFirebase) {
           id: u.id || docId,
           name: u.name || 'Petugas',
           email: u.email || '',
+          password: u.password || '123',
           role: u.role || 'petugas',
           syncedAt: new Date().toISOString()
         }, { merge: true });
@@ -1300,7 +1493,6 @@ if (btnSyncUsersToFirebase) {
 
       await Promise.race([commitPromise, timeoutPromise]);
 
-      // 4. Update cached memory and local storage
       cachedAdminUsers = usersToSync;
       try {
         localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
@@ -1324,6 +1516,109 @@ if (btnSyncUsersToFirebase) {
       if (btnSyncUsersToFirebase) {
         btnSyncUsersToFirebase.disabled = false;
         btnSyncUsersToFirebase.textContent = '🔄 Sinkronkan Akun ke Firebase Firestore';
+      }
+    }
+  });
+}
+
+// Helper & Handlers for Google Apps Script & Drive Integration
+window.copyGasCode = function() {
+  const codeEl = document.getElementById('gasCodeBox');
+  if (!codeEl) return;
+  const text = codeEl.innerText || codeEl.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    showStatus('📋 Kode Apps Script berhasil di-copy!', 'ok');
+  }).catch(() => {
+    showStatus('Gagal menyalin otomatis, silakan blok dan copy manual.', 'err');
+  });
+};
+
+const formGasConfig = document.getElementById('formGasConfig');
+const gasUrlInput = document.getElementById('gasUrlInput');
+const btnTestGasSync = document.getElementById('btnTestGasSync');
+
+if (gasUrlInput) {
+  fetch('/api/gdrive/config')
+    .then(r => r.json())
+    .then(data => {
+      if (data && data.googleScriptUrl) {
+        gasUrlInput.value = data.googleScriptUrl;
+      }
+    })
+    .catch(() => {});
+}
+
+if (formGasConfig) {
+  formGasConfig.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const url = gasUrlInput ? gasUrlInput.value.trim() : '';
+    if (!url) {
+      showStatus('Harap masukkan Web App URL Google Apps Script.', 'err');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/gdrive/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ googleScriptUrl: url, autoSyncGdrive: true })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showStatus('✅ URL Google Apps Script berhasil disimpan & sinkronisasi otomatis aktif!', 'ok');
+      } else {
+        showStatus('Gagal menyimpan: ' + (data.message || 'Kesalahan server'), 'err');
+      }
+    } catch (err) {
+      showStatus('Terjadi kendala saat menyimpan URL Google Apps Script.', 'err');
+    }
+  });
+}
+
+if (btnTestGasSync) {
+  btnTestGasSync.addEventListener('click', async () => {
+    const url = gasUrlInput ? gasUrlInput.value.trim() : '';
+    if (!url) {
+      showStatus('Masukkan Web App URL terlebih dahulu sebelum dites.', 'err');
+      return;
+    }
+
+    btnTestGasSync.disabled = true;
+    btnTestGasSync.textContent = '⏳ Menguji Koneksi...';
+
+    try {
+      const samplePayload = {
+        tanggal: new Date().toLocaleString('id-ID'),
+        kode: 'TEST_KONEKSI',
+        gedung: 'Gedung Utama',
+        ruangan: 'Ruang Server K3',
+        lantai: '1',
+        merk: 'TEST',
+        kapasitas: '3 kg',
+        jenisGas: 'Powder',
+        status: 'OK',
+        keterangan: 'Tes koneksi Google Sheets & Drive dari Admin Dashboard',
+        pemeriksa: currentUser ? (currentUser.name || currentUser.email) : 'Admin K3'
+      };
+
+      const res = await fetch('/api/gdrive/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ googleScriptUrl: url, payload: samplePayload })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showStatus('✨ Berhasil! Data tes berhasil dikirim ke Google Sheets & Google Drive! 🎉', 'ok');
+      } else {
+        showStatus('❌ ' + (data.message || 'Gagal terhubung ke Google Apps Script'), 'err');
+      }
+    } catch (err) {
+      showStatus('Gagal tes koneksi: ' + err.message, 'err');
+    } finally {
+      if (btnTestGasSync) {
+        btnTestGasSync.disabled = false;
+        btnTestGasSync.textContent = '⚡ Tes Koneksi';
       }
     }
   });
