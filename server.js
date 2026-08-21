@@ -1719,9 +1719,26 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Start Server and Initialize SQLite
-app.listen(PORT, '0.0.0.0', async () => {
-  await initSqliteEngine();
-  console.log(`🚀 APAR Realtime & SQLite Server running at http://0.0.0.0:${PORT}`);
+// Initialize SQLite Engine and Start Server (cPanel Passenger Compatible)
+initSqliteEngine().then(() => {
+  const PORT = process.env.PORT || 3000;
+  if (process.env.PORT) {
+    app.listen(process.env.PORT, () => {
+      console.log(`🚀 APAR Realtime & SQLite Server running on cPanel (PORT: ${process.env.PORT})`);
+    });
+  } else {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 APAR Realtime & SQLite Server running locally at http://0.0.0.0:${PORT}`);
+    });
+  }
+}).catch(err => {
+  console.error("Failed to initialize SQLite engine:", err);
+  const PORT = process.env.PORT || 3000;
+  if (process.env.PORT) {
+    app.listen(process.env.PORT);
+  } else {
+    app.listen(PORT, '0.0.0.0');
+  }
 });
+
 
