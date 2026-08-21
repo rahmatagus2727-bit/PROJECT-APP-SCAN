@@ -340,7 +340,7 @@ service cloud.firestore {
             <form id="formGasConfig" style="margin-top: 12px;">
               <div class="form-group">
                 <label for="gasUrlInput">Web App URL Google Apps Script *</label>
-                <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec" required />
+                <input type="text" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec" required />
                 <span style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-top: 4px;">Pastikan berakhiran <b>/exec</b> (bukan /edit).</span>
               </div>
 
@@ -1522,6 +1522,50 @@ if (btnSyncUsersToFirebase) {
 }
 
 // Helper & Handlers for Google Apps Script & Drive Integration
+let GDRIVE_SETTINGS = {
+  googleScriptUrl: localStorage.getItem('apar_gdrive_url') || '',
+  autoSyncGdrive: true
+};
+
+function sanitizeScriptUrl(inputUrl) {
+  if (!inputUrl) return '';
+  let url = String(inputUrl).trim().replace(/^["']|["']$/g, '');
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://' + url;
+  }
+  if (url.includes('/edit')) {
+    url = url.replace(/\/edit(\?.*)?$/, '/exec$1');
+  }
+  if (url.includes('/dev')) {
+    url = url.replace(/\/dev(\?.*)?$/, '/exec$1');
+  }
+  return url;
+}
+
+async function syncSingleToGoogleSheets(doc) {
+  const url = GDRIVE_SETTINGS.googleScriptUrl || localStorage.getItem('apar_gdrive_url') || '';
+  if (!url) return null;
+
+  try {
+    const res = await fetch('/api/gdrive/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        googleScriptUrl: url,
+        payload: doc
+      })
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      console.log('✅ Synchronized log to Google Sheets & Drive:', doc.kode || doc.id);
+      return data;
+    }
+  } catch (err) {
+    console.warn('Google Sheets background sync notice:', err);
+  }
+  return null;
+}
+
 window.copyGasCode = function() {
   const codeEl = document.getElementById('gasCodeBox');
   if (!codeEl) return;
@@ -1538,50 +1582,99 @@ const gasUrlInput = document.getElementById('gasUrlInput');
 const btnTestGasSync = document.getElementById('btnTestGasSync');
 
 if (gasUrlInput) {
+  if (GDRIVE_SETTINGS.googleScriptUrl) {
+    gasUrlInput.value = GDRIVE_SETTINGS.googleScriptUrl;
+  }
+
   fetch('/api/gdrive/config')
     .then(r => r.json())
     .then(data => {
       if (data && data.googleScriptUrl) {
+        GDRIVE_SETTINGS.googleScriptUrl = data.googleScriptUrl;
         gasUrlInput.value = data.googleScriptUrl;
+        try { localStorage.setItem('apar_gdrive_url', data.googleScriptUrl); } catch (e) {}
       }
     })
     .catch(() => {});
+
+  if (db && isFirebaseConfigured()) {
+    db.collection('settings').doc('gdrive').get()
+      .then(doc => {
+        if (doc.exists && doc.data() && doc.data().googleScriptUrl) {
+          const fsUrl = doc.data().googleScriptUrl;
+          GDRIVE_SETTINGS.googleScriptUrl = fsUrl;
+          gasUrlInput.value = fsUrl;
+          try { localStorage.setItem('apar_gdrive_url', fsUrl); } catch (e) {}
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 if (formGasConfig) {
   formGasConfig.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const url = gasUrlInput ? gasUrlInput.value.trim() : '';
-    if (!url) {
-      showStatus('Harap masukkan Web App URL Google Apps Script.', 'err');
+    const rawUrl = gasUrlInput ? gasUrlInput.value : '';
+    const cleanUrl = sanitizeScriptUrl(rawUrl);
+
+    if (!cleanUrl) {
+      showStatus('Harap masukkan Web App URL Google Apps Script yang valid (berakhiran /exec).', 'err');
       return;
     }
+
+    if (gasUrlInput) gasUrlInput.value = cleanUrl;
+
+    GDRIVE_SETTINGS.googleScriptUrl = cleanUrl;
+    GDRIVE_SETTINGS.autoSyncGdrive = true;
+    try {
+      localStorage.setItem('apar_gdrive_url', cleanUrl);
+    } catch (e) {}
+
+    let savedServer = false;
+    let savedFirestore = false;
 
     try {
       const res = await fetch('/api/gdrive/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ googleScriptUrl: url, autoSyncGdrive: true })
+        body: JSON.stringify({ googleScriptUrl: cleanUrl, autoSyncGdrive: true })
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showStatus('✅ URL Google Apps Script berhasil disimpan & sinkronisasi otomatis aktif!', 'ok');
-      } else {
-        showStatus('Gagal menyimpan: ' + (data.message || 'Kesalahan server'), 'err');
+        savedServer = true;
       }
     } catch (err) {
-      showStatus('Terjadi kendala saat menyimpan URL Google Apps Script.', 'err');
+      console.warn('Server save gdrive config notice:', err);
     }
+
+    if (db && isFirebaseConfigured()) {
+      try {
+        await db.collection('settings').doc('gdrive').set({
+          googleScriptUrl: cleanUrl,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        savedFirestore = true;
+      } catch (fsErr) {
+        console.warn('Firestore save gdrive config notice:', fsErr);
+      }
+    }
+
+    showStatus('✅ URL Google Apps Script berhasil disimpan! Aplikasi siap menyinkronkan data ke Google Sheets & Drive.', 'ok');
   });
 }
 
 if (btnTestGasSync) {
   btnTestGasSync.addEventListener('click', async () => {
-    const url = gasUrlInput ? gasUrlInput.value.trim() : '';
-    if (!url) {
+    const rawUrl = gasUrlInput ? gasUrlInput.value : '';
+    const cleanUrl = sanitizeScriptUrl(rawUrl);
+
+    if (!cleanUrl) {
       showStatus('Masukkan Web App URL terlebih dahulu sebelum dites.', 'err');
       return;
     }
+
+    if (gasUrlInput) gasUrlInput.value = cleanUrl;
+    GDRIVE_SETTINGS.googleScriptUrl = cleanUrl;
 
     btnTestGasSync.disabled = true;
     btnTestGasSync.textContent = '⏳ Menguji Koneksi...';
@@ -1604,7 +1697,7 @@ if (btnTestGasSync) {
       const res = await fetch('/api/gdrive/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ googleScriptUrl: url, payload: samplePayload })
+        body: JSON.stringify({ googleScriptUrl: cleanUrl, payload: samplePayload })
       });
 
       const data = await res.json();
