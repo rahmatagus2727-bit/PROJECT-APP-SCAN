@@ -519,6 +519,40 @@ app.post('/api/apar_log', (req, res) => {
   });
 });
 
+// Delete single log entry
+app.delete('/api/apar_log/:id', (req, res) => {
+  const docId = req.params.id;
+  if (!docId) {
+    return res.status(400).json({ success: false, message: 'Kode / ID APAR wajib diisi.' });
+  }
+
+  const cleanId = String(docId).trim();
+
+  if (sqliteDb) {
+    try {
+      sqliteDb.run("DELETE FROM inspections WHERE doc_id = ? OR kode = ?", [cleanId, cleanId]);
+      sqliteDb.run(`INSERT INTO audit_logs (action, details, pemeriksa) VALUES ('DELETE_SINGLE', ?, 'Petugas/Admin')`, [`Hapus log ${cleanId}`]);
+      persistSqliteToDisk();
+    } catch (err) {
+      console.warn('SQLite single delete warning:', err);
+    }
+  }
+
+  delete logs[cleanId];
+  delete logs[cleanId.toLowerCase()];
+  delete logs[cleanId.toUpperCase()];
+
+  broadcastUpdate({ type: 'delete_single', docId: cleanId, timestamp: Date.now() });
+
+  // Auto delete in Google Sheets if URL configured
+  const targetScriptUrl = APP_SETTINGS.googleScriptUrl || '';
+  if (targetScriptUrl && targetScriptUrl.startsWith('http')) {
+    callGoogleAppsScript(targetScriptUrl, { action: 'delete', kode: cleanId, id: cleanId }).catch(() => {});
+  }
+
+  res.json({ success: true, message: `Log ${cleanId} berhasil dihapus.` });
+});
+
 // Reset log if needed
 app.delete('/api/apar_log', (req, res) => {
   if (sqliteDb) {

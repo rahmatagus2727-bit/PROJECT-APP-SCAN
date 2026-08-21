@@ -399,6 +399,28 @@ function doPost(e) {
       sheet.getRange(1, 1, 1, 18).setFontWeight("bold").setBackground("#0f172a").setFontColor("#ffffff");
     }
 
+    // A. FITUR HAPUS TUGAS / LOG
+    if (data.action === "delete") {
+      var targetKode = String(data.kode || data.id || "").trim().toLowerCase();
+      if (targetKode) {
+        var rows = sheet.getDataRange().getValues();
+        var deletedCount = 0;
+        for (var i = rows.length - 1; i >= 1; i--) {
+          var rowKode = String(rows[i][1] || "").trim().toLowerCase();
+          if (rowKode === targetKode) {
+            sheet.deleteRow(i + 1);
+            deletedCount++;
+          }
+        }
+        return ContentService.createTextOutput(JSON.stringify({ 
+          success: true, 
+          message: "Data APAR " + targetKode + " berhasil dihapus dari Google Sheets!", 
+          deletedCount: deletedCount 
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    // B. SIMPAN ATAU UPDATE TUGAS
     var photoUrl = "-";
     if (data.foto && typeof data.foto === "string" && data.foto.indexOf("base64,") !== -1) {
       try {
@@ -414,14 +436,32 @@ function doPost(e) {
       photoUrl = data.photoUrl;
     }
 
-    sheet.appendRow([
+    var targetKodeNew = String(data.kode || "").trim().toLowerCase();
+    var existingRowIndex = -1;
+    if (targetKodeNew) {
+      var allRows = sheet.getDataRange().getValues();
+      for (var r = 1; r < allRows.length; r++) {
+        if (String(allRows[r][1] || "").trim().toLowerCase() === targetKodeNew) {
+          existingRowIndex = r + 1;
+          break;
+        }
+      }
+    }
+
+    var rowValues = [
       data.tanggal || new Date().toLocaleString("id-ID"),
       data.kode || "-", data.gedung || "-", data.ruangan || "-", data.lantai || "-",
       data.merk || "-", data.kapasitas || "-", data.jenisGas || "-",
       data.kebersihanTabung || "-", data.indikatorTekanan || "-", data.kunciPengaman || "-",
       data.selangSemprot || "-", data.nozzle || "-", data.tagLabel || "-",
       data.status || "OK", data.keterangan || "-", photoUrl, data.pemeriksa || "Petugas"
-    ]);
+    ];
+
+    if (existingRowIndex > 0) {
+      sheet.getRange(existingRowIndex, 1, 1, 18).setValues([rowValues]);
+    } else {
+      sheet.appendRow(rowValues);
+    }
 
     return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Data berhasil dicatat ke Google Sheets & Drive!", photoUrl: photoUrl })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
@@ -658,6 +698,16 @@ function initServerEventSource() {
 
           const count = payload.totalLogs || Object.keys(LOG).length;
           setDbStatus('online', `Real-Time Aktif (${count} data)`);
+        } else if (payload.type === 'delete_single' && payload.docId) {
+          const targetId = String(payload.docId).trim();
+          for (const k in LOG) {
+            if (k === targetId || (LOG[k] && (String(LOG[k].kode || '').trim() === targetId || String(LOG[k].id || '').trim() === targetId))) {
+              delete LOG[k];
+            }
+          }
+          saveLocalLog(LOG);
+          renderRiwayat();
+          renderProgress();
         } else if (payload.type === 'reset') {
           LOG = {};
           saveLocalLog(LOG);
@@ -1579,6 +1629,7 @@ function sanitizeScriptUrl(inputUrl) {
 }
 
 async function syncSingleToGoogleSheets(doc) {
+  if (!doc) return null;
   const url = GDRIVE_SETTINGS.googleScriptUrl || localStorage.getItem('apar_gdrive_url') || '';
   if (!url) return null;
 
@@ -1591,14 +1642,74 @@ async function syncSingleToGoogleSheets(doc) {
         payload: doc
       })
     });
-    const data = await res.json();
-    if (res.ok && data.success) {
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch (e) { data = { success: res.ok }; }
+
+    if (data && data.success) {
       console.log('✅ Synchronized log to Google Sheets & Drive:', doc.kode || doc.id);
+      showStatus(`Tersimpan ke Cloud & Google Sheets (${doc.kode || doc.id}) ✅`, 'ok');
       return data;
     }
   } catch (err) {
     console.warn('Google Sheets background sync notice:', err);
   }
+
+  // Direct client fallback
+  try {
+    await fetch(url, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(doc)
+    });
+    console.log('✅ Direct webhook sync success:', doc.kode || doc.id);
+    showStatus(`Tersimpan ke Cloud & Google Sheets (${doc.kode || doc.id}) ✅`, 'ok');
+    return { success: true };
+  } catch (directErr) {
+    console.warn('Direct webhook sync warning:', directErr);
+  }
+  return null;
+}
+
+async function syncSingleDeleteToGoogleSheets(kodeStr) {
+  if (!kodeStr) return null;
+  const url = GDRIVE_SETTINGS.googleScriptUrl || localStorage.getItem('apar_gdrive_url') || '';
+  if (!url) return null;
+
+  const payload = { action: 'delete', kode: kodeStr, id: kodeStr };
+
+  try {
+    const res = await fetch('/api/gdrive/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        googleScriptUrl: url,
+        payload: payload
+      })
+    });
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch (e) { data = { success: res.ok }; }
+
+    if (data && data.success) {
+      console.log('✅ Google Sheets delete sync success:', kodeStr);
+      return data;
+    }
+  } catch (err) {
+    console.warn('Google Sheets delete sync notice:', err);
+  }
+
+  // Direct fallback
+  try {
+    await fetch(url, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    console.log('✅ Google Sheets direct delete sync fallback success:', kodeStr);
+  } catch (e) {}
   return null;
 }
 
@@ -2439,9 +2550,14 @@ function renderRiwayat() {
 
     return `
       <div class="log-item">
-        <div class="log-head">
-          <span class="log-kode">Kode ${escapeHtml(data.kode)}</span>
-          <span class="log-check">✅ Selesai</span>
+        <div class="log-head" style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+          <div>
+            <span class="log-kode">Kode ${escapeHtml(data.kode)}</span>
+            <span class="log-check" style="margin-left: 6px;">✅ Selesai</span>
+          </div>
+          <button type="button" onclick="deleteSingleLogEntry('${escapeHtml(data.kode)}')" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.2s;" title="Hapus riwayat pemeriksaan ini">
+            🗑️ Hapus Tugas
+          </button>
         </div>
         <div class="log-ruangan">${escapeHtml(data.ruangan || '-')} — ${escapeHtml(data.gedung || '-')}${data.lantai ? ' LT.' + data.lantai : ''}</div>
         <div class="log-meta">
@@ -2456,6 +2572,56 @@ function renderRiwayat() {
     `;
   }).join('');
 }
+
+async function deleteSingleLogEntry(targetKode) {
+  if (!targetKode) return;
+  const kodeStr = String(targetKode).trim();
+
+  const isConfirmed = confirm(
+    `Apakah Anda yakin ingin menghapus data hasil pemeriksaan APAR Kode "${kodeStr}"?\n\n` +
+    `• Data akan dihapus dari riwayat pemeriksaan.\n` +
+    `• Progres pemeriksaan akan otomatis berkurang.\n` +
+    `• Data di Google Sheets & Drive akan terhapus otomatis.`
+  );
+
+  if (!isConfirmed) return;
+
+  showStatus(`⏳ Menghapus data pemeriksaan Kode ${kodeStr}...`, 'info');
+
+  // 1. Delete from in-memory LOG and localStorage
+  for (const k in LOG) {
+    if (k === kodeStr || (LOG[k] && (String(LOG[k].kode || '').trim() === kodeStr || String(LOG[k].id || '').trim() === kodeStr))) {
+      delete LOG[k];
+    }
+  }
+  saveLocalLog(LOG);
+
+  // 2. Delete from Backend Server SQLite
+  try {
+    await fetch(`/api/apar_log/${encodeURIComponent(kodeStr)}`, { method: 'DELETE' });
+  } catch (err) {
+    console.warn('Backend server delete warning:', err);
+  }
+
+  // 3. Delete from Firebase Firestore if connected
+  if (db && isFirebaseConfigured()) {
+    try {
+      await db.collection(COLLECTION_NAME).doc(kodeStr).delete();
+    } catch (fsErr) {
+      console.warn('Firestore delete warning:', fsErr);
+    }
+  }
+
+  // 4. Delete from Google Sheets & Drive via Apps Script
+  syncSingleDeleteToGoogleSheets(kodeStr).catch(e => console.warn('Gdrive delete sync:', e));
+
+  // 5. Instantly refresh UI, Progress counters, and Bento Stats
+  renderRiwayat();
+  renderProgress();
+
+  showStatus(`✅ Data pemeriksaan APAR Kode ${kodeStr} berhasil dihapus. Progres diperbarui!`, 'ok');
+}
+window.deleteSingleLogEntry = deleteSingleLogEntry;
 
 searchRiwayat.addEventListener('input', renderRiwayat);
 filterGedungRiwayat.addEventListener('change', renderRiwayat);
@@ -2960,45 +3126,7 @@ if (btnSaveGdriveConfig) {
   });
 }
 
-async function syncSingleToGoogleSheets(entry) {
-  if (!GDRIVE_SETTINGS.googleScriptUrl) return;
-  const url = GDRIVE_SETTINGS.googleScriptUrl;
-  try {
-    const res = await fetch('/api/gdrive/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        googleScriptUrl: url,
-        payload: entry
-      })
-    });
-    const text = await res.text();
-    let result = {};
-    try { result = JSON.parse(text); } catch (e) { result = { success: res.ok }; }
-    
-    if (result.success) {
-      console.log('✅ Google Sheets Sync Berhasil (via server):', result);
-      showStatus(`Tersimpan ke Cloud & Google Sheets (${entry.kode || entry.id}) ✅`, 'ok');
-      return;
-    }
-  } catch (err) {
-    console.warn('Server sync error, attempting direct client fallback:', err);
-  }
-
-  // Direct client fallback
-  try {
-    await fetch(url, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(entry)
-    });
-    console.log('✅ Google Sheets Sync Berhasil (direct client webhook)');
-    showStatus(`Tersimpan ke Cloud & Google Sheets (${entry.kode || entry.id}) ✅`, 'ok');
-  } catch (directErr) {
-    console.warn('Direct client sync fallback error:', directErr);
-  }
-}
+// Synchronize config changes
 
 if (btnTestGdriveSync) {
   btnTestGdriveSync.addEventListener('click', async () => {
