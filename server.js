@@ -641,14 +641,15 @@ app.get('/api/users', (req, res) => {
     return res.json({ success: true, users: [] });
   }
   try {
-    const resUsers = sqliteDb.exec("SELECT id, email, name, role, created_at FROM users ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC");
+    const resUsers = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC");
     if (!resUsers || !resUsers[0]) {
       return res.json({ success: true, users: [] });
     }
-    const list = resUsers[0].values.map(([id, email, name, role, created_at]) => ({
+    const list = resUsers[0].values.map(([id, email, name, password, role, created_at]) => ({
       id,
       email,
       name: name || email,
+      password: password || '123',
       role: role || (id === 'user_admin' ? 'admin' : 'petugas'),
       created_at
     }));
@@ -688,10 +689,16 @@ app.post('/api/users', (req, res) => {
         }
       } catch (e) {}
 
+      broadcastUpdate({
+        type: 'user_updated',
+        user: { id: newId, email: cleanEmail, name: cleanName, role: cleanRole, password: cleanPass },
+        timestamp: Date.now()
+      });
+
       return res.json({
         success: true,
         message: `Akun "${cleanName}" (${cleanRole}) berhasil dibuat.`,
-        user: { id: newId, email: cleanEmail, name: cleanName, role: cleanRole }
+        user: { id: newId, email: cleanEmail, name: cleanName, role: cleanRole, password: cleanPass }
       });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
@@ -726,6 +733,12 @@ app.delete('/api/users/:id', (req, res) => {
           fs.writeFileSync(USERS_FILE, JSON.stringify(list, null, 2), 'utf-8');
         }
       } catch (e) {}
+
+      broadcastUpdate({
+        type: 'user_deleted',
+        deletedUserId: userId,
+        timestamp: Date.now()
+      });
 
       return res.json({ success: true, message: 'Akun petugas berhasil dihapus.' });
     } catch (err) {

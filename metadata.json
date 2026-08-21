@@ -1,6 +1,6 @@
 {
-  "name": "Scan QR APAR",
-  "description": "Aplikasi scan QR APAR & FSS untuk pemeliharaan dan inspeksi bulanan.",
+  "name": "My APAR",
+  "description": "Aplikasi My APAR untuk scan QR, pemeliharaan, dan inspeksi K3 bulanan.",
   "requestFramePermissions": [
     "camera"
   ],

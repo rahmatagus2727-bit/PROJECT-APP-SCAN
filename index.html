@@ -3,7 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
-<title>Scan QR APAR &amp; FSS — Pemeliharaan Bulanan</title>
+<title>My APAR — Portal Pemeliharaan &amp; Inspeksi K3</title>
+<script>
+  (function() {
+    try {
+      var savedTheme = localStorage.getItem('apar_theme') || 'light';
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    } catch(e) {}
+  })();
+</script>
 <link rel="stylesheet" href="style.css" />
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
@@ -22,10 +30,18 @@
 
   <!-- ======================= AUTH / LOGIN SCREEN ======================= -->
   <div id="authScreen" class="auth-wrapper">
-    <div class="card" style="max-width: 480px; margin: 0 auto;">
+    <div class="card" style="max-width: 480px; margin: 0 auto; position: relative;">
+      <div style="display: flex; justify-content: flex-end; margin-bottom: -10px;">
+        <button type="button" class="btn-theme-toggle" onclick="toggleAppTheme()" title="Ubah Mode Tampilan (Terang / Gelap)">
+          <span class="theme-icon">🌙</span> <span class="theme-text">Mode Gelap</span>
+        </button>
+      </div>
+
       <div class="auth-header">
-        <div class="auth-logo-badge">🧯</div>
-        <h1>Portal Petugas &amp; Admin APAR</h1>
+        <div class="auth-logo-badge">
+          <img src="logo.png" alt="My APAR Logo" class="auth-logo-img" />
+        </div>
+        <h1>My Apar</h1>
         <p>Silakan pilih atau masukkan akun yang telah terdaftar untuk masuk ke sistem checklist &amp; manajemen APAR.</p>
       </div>
 
@@ -60,14 +76,20 @@
     <!-- Top Header -->
     <header class="app-header">
       <div class="header-brand">
-        <div class="header-icon">🧯</div>
+        <div class="header-icon">
+          <img src="logo.png" alt="My APAR Logo" class="header-logo-img" />
+        </div>
         <div class="header-title-group">
-          <h1>Inspeksi QR APAR / FSS</h1>
+          <h1>My APAR</h1>
           <p>Sistem Pemeliharaan &amp; Checklist Bulanan Real-Time</p>
         </div>
       </div>
 
       <div class="header-actions">
+        <button type="button" class="btn-theme-toggle" onclick="toggleAppTheme()" title="Ubah Mode Tampilan (Terang / Gelap)">
+          <span class="theme-icon">🌙</span> <span class="theme-text">Mode Gelap</span>
+        </button>
+
         <div id="dbStatus" class="db-status-pill db-connecting" title="Status Database Bersama">
           <span>🔄</span> <span id="dbStatusText">Menyambungkan...</span>
         </div>
@@ -789,6 +811,32 @@ function escapeHtml(str) {
 }
 
 /* ===========================================================
+   Theme Toggle Functionality (Mode Gelap / Terang)
+   =========================================================== */
+function updateThemeUI(theme) {
+  const isDark = theme === 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  try { localStorage.setItem('apar_theme', theme); } catch (e) {}
+
+  const icons = document.querySelectorAll('.theme-icon');
+  const texts = document.querySelectorAll('.theme-text');
+
+  icons.forEach(el => el.textContent = isDark ? '☀️' : '🌙');
+  texts.forEach(el => el.textContent = isDark ? 'Mode Terang' : 'Mode Gelap');
+}
+
+window.toggleAppTheme = function() {
+  const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  const next = current === 'dark' ? 'light' : 'dark';
+  updateThemeUI(next);
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = document.documentElement.getAttribute('data-theme') || 'light';
+  updateThemeUI(saved);
+});
+
+/* ===========================================================
    3. Unified Real-Time Engine (Server-Sent Events + Firestore)
    =========================================================== */
 let sseSource = null;
@@ -874,6 +922,35 @@ function initServerEventSource() {
           saveLocalLog(LOG);
           renderRiwayat();
           renderProgress();
+        } else if (payload.type === 'user_deleted' && payload.deletedUserId) {
+          const delId = String(payload.deletedUserId).trim().toLowerCase();
+          cachedAdminUsers = cachedAdminUsers.filter(u => 
+            String(u.id || '').trim().toLowerCase() !== delId && 
+            String(u.email || '').trim().toLowerCase() !== delId
+          );
+          try { localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers)); } catch (e) {}
+          renderAdminUserList();
+
+          if (currentUser) {
+            const curId = String(currentUser.id || '').trim().toLowerCase();
+            const curEmail = String(currentUser.email || '').trim().toLowerCase();
+            if (curId === delId || curEmail === delId) {
+              const oldName = currentUser.name || currentUser.email || 'Petugas';
+              showAuthScreen();
+              alert(`⚠️ AKUN DIHAPUS!\n\nAkun Anda ("${oldName}") telah dihapus oleh Administrator K3.\nAnda telah otomatis ter-logout dari sistem.`);
+              showStatus(`⚠️ Akun "${oldName}" telah dihapus oleh Admin K3. Anda otomatis ter-logout.`, 'err');
+            }
+          }
+        } else if (payload.type === 'user_updated' && payload.user) {
+          const newU = payload.user;
+          const idx = cachedAdminUsers.findIndex(u => u.id === newU.id || (u.email && newU.email && u.email.toLowerCase() === newU.email.toLowerCase()));
+          if (idx >= 0) {
+            cachedAdminUsers[idx] = { ...cachedAdminUsers[idx], ...newU };
+          } else {
+            cachedAdminUsers.push(newU);
+          }
+          try { localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers)); } catch (e) {}
+          renderAdminUserList();
         }
       } catch (err) {
         console.warn('Error parsing SSE message:', err);
@@ -1381,12 +1458,90 @@ if (btnLogout) {
 
 function getDefaultUsersList() {
   return [
-    { id: 'user_admin', email: 'admin@apar.id', name: 'Admin K3 / Pemeliharaan', role: 'admin', created_at: new Date().toISOString() },
-    { id: 'user_rizky', email: 'rizky@apar.id', name: 'Rizky (Petugas Utama)', role: 'petugas', created_at: new Date().toISOString() },
-    { id: 'user_petugas1', email: 'petugas1@apar.id', name: 'Petugas Lapangan 1', role: 'petugas', created_at: new Date().toISOString() },
-    { id: 'user_petugas2', email: 'petugas2@apar.id', name: 'Petugas Lapangan 2', role: 'petugas', created_at: new Date().toISOString() }
+    { id: 'user_admin', email: 'admin@apar.id', name: 'Admin K3 / Pemeliharaan', password: 'admin', role: 'admin', created_at: new Date().toISOString() },
+    { id: 'user_rizky', email: 'rizky@apar.id', name: 'Rizky (Petugas Utama)', password: '123', role: 'petugas', created_at: new Date().toISOString() },
+    { id: 'user_petugas1', email: 'petugas1@apar.id', name: 'Petugas Lapangan 1', password: '123', role: 'petugas', created_at: new Date().toISOString() },
+    { id: 'user_petugas2', email: 'petugas2@apar.id', name: 'Petugas Lapangan 2', password: '123', role: 'petugas', created_at: new Date().toISOString() }
   ];
 }
+
+window.toggleUserPass = function(userId) {
+  const elVal = document.getElementById(`userPassVal_${userId}`);
+  const elTxt = document.getElementById(`userPassTxt_${userId}`);
+  if (!elVal) return;
+
+  const realPass = elVal.getAttribute('data-pass') || '123';
+  const isHidden = elVal.getAttribute('data-hidden') !== 'false';
+
+  if (isHidden) {
+    elVal.textContent = realPass;
+    elVal.setAttribute('data-hidden', 'false');
+    if (elTxt) elTxt.textContent = 'Sembunyikan';
+  } else {
+    elVal.textContent = '••••••';
+    elVal.setAttribute('data-hidden', 'true');
+    if (elTxt) elTxt.textContent = 'Lihat';
+  }
+};
+
+async function verifyActiveUserSession() {
+  if (!currentUser) return;
+  if (currentUser.id === 'user_admin' || currentUser.email === 'admin@apar.id') return;
+
+  const curId = String(currentUser.id || '').trim().toLowerCase();
+  const curEmail = String(currentUser.email || '').trim().toLowerCase();
+  const curName = String(currentUser.name || '').trim().toLowerCase();
+
+  let activeUsers = cachedAdminUsers || [];
+
+  try {
+    const res = await fetch('/api/users');
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.users) && data.users.length) {
+        activeUsers = data.users;
+        cachedAdminUsers = data.users;
+        try { localStorage.setItem('apar_all_users', JSON.stringify(data.users)); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+
+  if (activeUsers && activeUsers.length > 0) {
+    const exists = activeUsers.some(u => {
+      const uId = String(u.id || '').trim().toLowerCase();
+      const uEmail = String(u.email || '').trim().toLowerCase();
+      const uName = String(u.name || '').trim().toLowerCase();
+      return uId === curId || (curEmail && uEmail === curEmail) || (curName && uName === curName);
+    });
+
+    if (!exists) {
+      const oldName = currentUser.name || currentUser.email || 'Petugas';
+      showAuthScreen();
+      alert(`⚠️ AKUN TIDAK TERSEDIA!\n\nAkun Anda ("${oldName}") telah dihapus oleh Administrator K3.\n\nSesi login Anda telah diakhiri secara otomatis.`);
+      showStatus(`⚠️ Akun "${oldName}" telah dihapus oleh Admin K3. Sesi login berakhir.`, 'err');
+    }
+  }
+}
+
+window.addEventListener('storage', (e) => {
+  if (e.key === 'apar_deleted_user_event' && e.newValue) {
+    try {
+      const data = JSON.parse(e.newValue);
+      if (data && data.userId && currentUser) {
+        const targetIdStr = String(data.userId).trim().toLowerCase();
+        const curId = String(currentUser.id || '').trim().toLowerCase();
+        const curEmail = String(currentUser.email || '').trim().toLowerCase();
+
+        if (curId === targetIdStr || curEmail === targetIdStr) {
+          const name = currentUser.name || currentUser.email;
+          showAuthScreen();
+          alert(`⚠️ AKUN DIHAPUS!\n\nAkun Anda ("${name}") telah dihapus oleh Admin K3.\n\nAnda telah otomatis ter-logout dari sistem.`);
+          showStatus(`⚠️ Akun Anda (${name}) telah dihapus oleh Admin K3.`, 'err');
+        }
+      }
+    } catch (err) {}
+  }
+});
 
 /* ===========================================================
    Admin Panel: Manage Petugas & Accounts
@@ -1461,6 +1616,7 @@ async function loadAdminUserList() {
   } catch (e) {}
 
   renderAdminUserList();
+  await verifyActiveUserSession();
 }
 
 function renderAdminUserList() {
@@ -1488,32 +1644,44 @@ function renderAdminUserList() {
     const isCurrent = currentUser && (currentUser.id === u.id || currentUser.email === u.email);
     const initials = isAdmin ? '👑' : ((u.name || 'P').trim().split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'P');
     const createdStr = u.created_at ? new Date(u.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Aktif';
+    const displayPass = u.password || '123';
 
     return `
       <div class="user-item-card" data-id="${escapeHtml(u.id)}">
-        <div class="user-item-info">
+        <div class="user-item-info" style="flex: 1; min-width: 0;">
           <div class="user-item-avatar ${isAdmin ? 'admin' : 'petugas'}">
             ${escapeHtml(initials)}
           </div>
-          <div class="user-item-text">
-            <div style="display:flex; align-items:center; gap:6px;">
+          <div class="user-item-text" style="flex: 1; min-width: 0;">
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
               <span class="user-item-name">${escapeHtml(u.name)}</span>
               <span class="role-badge ${isAdmin ? 'admin' : 'petugas'}">${isAdmin ? 'Admin' : 'Petugas'}</span>
-              ${isCurrent ? '<span style="font-size:0.68rem; color:#38bdf8; font-weight:600;">(Anda)</span>' : ''}
+              ${isCurrent ? '<span style="font-size:0.68rem; color:#38bdf8; font-weight:600; background:rgba(56,189,248,0.15); padding:1px 6px; border-radius:4px;">(Akun Anda)</span>' : ''}
             </div>
+            
             <div class="user-item-sub">
-              <span>🆔 ${escapeHtml(u.email || u.id)}</span>
+              <span>🆔 <b>${escapeHtml(u.email || u.id)}</b></span>
               <span>•</span>
               <span>📅 ${escapeHtml(createdStr)}</span>
             </div>
+
+            <!-- Password Info Block -->
+            <div style="margin-top: 6px; display: inline-flex; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.7); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border-subtle); font-size: 0.76rem;">
+              <span style="color: var(--text-muted);">🔑 Password:</span>
+              <span id="userPassVal_${escapeHtml(u.id)}" data-pass="${escapeHtml(displayPass)}" data-hidden="true" style="font-family: monospace; font-weight: 700; color: #38bdf8; letter-spacing: 1px;">••••••</span>
+              <button type="button" onclick="toggleUserPass('${escapeHtml(u.id)}')" style="background:none; border:none; color: var(--text-muted); cursor:pointer; font-size:0.75rem; padding: 2px 4px; border-radius:3px; display:inline-flex; align-items:center; gap:3px;" title="Lihat/Sembunyikan Kata Sandi">
+                👁️ <span id="userPassTxt_${escapeHtml(u.id)}">Lihat</span>
+              </button>
+            </div>
           </div>
         </div>
-        <div>
+
+        <div style="display: flex; align-items: center; gap: 6px;">
           ${isMainAdmin ? `
-            <span style="font-size:0.75rem; color:var(--text-muted); padding:4px 8px;">Utama</span>
+            <span style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.05); padding:4px 10px; border-radius:6px; border:1px solid var(--border);">Utama</span>
           ` : `
             <button type="button" class="btn-delete-user" onclick="handleDeleteUser('${escapeHtml(u.id)}', '${escapeHtml(u.name)}')">
-              🗑️ Hapus
+              🗑️ Hapus Akun
             </button>
           `}
         </div>
@@ -1633,6 +1801,9 @@ window.handleDeleteUser = async function(userId, userName) {
   const isConfirmed = confirm(`Apakah Anda yakin ingin menghapus akun petugas "${userName}"?`);
   if (!isConfirmed) return;
 
+  const targetIdStr = String(userId).trim().toLowerCase();
+
+  // 1. Delete from Backend Server SQLite
   try {
     const fetchController = new AbortController();
     const timeoutId = setTimeout(() => fetchController.abort(), 3000);
@@ -1643,19 +1814,24 @@ window.handleDeleteUser = async function(userId, userName) {
     clearTimeout(timeoutId);
   } catch (err) {}
 
-  // Delete from local cache
-  cachedAdminUsers = cachedAdminUsers.filter(u => u.id !== userId && u.email !== userId);
+  // 2. Delete from Local Cache & Storage
+  cachedAdminUsers = cachedAdminUsers.filter(u => 
+    String(u.id || '').trim().toLowerCase() !== targetIdStr && 
+    String(u.email || '').trim().toLowerCase() !== targetIdStr
+  );
   try {
     localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
+    // Dispatch cross-tab logout signal
+    localStorage.setItem('apar_deleted_user_event', JSON.stringify({ userId, userName, timestamp: Date.now() }));
   } catch (e) {}
 
-  // Delete from Firestore if active
+  // 3. Delete from Firestore if active
   if (db && isFirebaseConfigured()) {
     try {
       const docId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
       const delPromise = db.collection('users').doc(docId).delete();
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Firestore timeout')), 15000)
+        setTimeout(() => reject(new Error('Firestore timeout')), 10000)
       );
       await Promise.race([delPromise, timeoutPromise]);
     } catch (e) {}
@@ -1663,6 +1839,17 @@ window.handleDeleteUser = async function(userId, userName) {
 
   showStatus(`🗑️ Akun "${userName}" berhasil dihapus.`, 'ok');
   renderAdminUserList();
+
+  // 4. Auto-logout if deleted user is current user
+  if (currentUser) {
+    const curId = String(currentUser.id || '').trim().toLowerCase();
+    const curEmail = String(currentUser.email || '').trim().toLowerCase();
+    if (curId === targetIdStr || curEmail === targetIdStr) {
+      showAuthScreen();
+      alert(`⚠️ AKUN DIHAPUS!\n\nAkun Anda ("${userName}") telah dihapus. Sesi login Anda telah diakhiri secara otomatis.`);
+      showStatus(`Akun "${userName}" telah dihapus. Sesi login diakhiri.`, 'err');
+    }
+  }
 };
 
 // Sync all users to Firebase Firestore (Resilient & Fail-Safe)
@@ -1791,46 +1978,115 @@ function sanitizeScriptUrl(inputUrl) {
   return url;
 }
 
+// Universal resilient Google Apps Script sender (Works on Node server & static hosts like GitHub Pages)
+async function sendPayloadToGoogleAppsScript(scriptUrl, payload) {
+  let url = sanitizeScriptUrl(scriptUrl || GDRIVE_SETTINGS.googleScriptUrl || localStorage.getItem('apar_gdrive_url') || '');
+  if (!url) {
+    return { success: false, message: 'URL Google Apps Script belum diisi di Pengaturan.' };
+  }
+
+  if (url.includes('docs.google.com/spreadsheets')) {
+    return {
+      success: false,
+      message: 'URL yang dimasukkan adalah link Google Sheets (docs.google.com). Harap gunakan Web App URL dari menu Extensions > Apps Script > Deploy > New Deployment > Web App (berakhiran /exec).'
+    };
+  }
+
+  // 1. Attempt Node server API proxy if backend is running
+  let serverData = null;
+  try {
+    const res = await fetch('/api/gdrive/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ googleScriptUrl: url, payload: payload })
+    });
+
+    const text = await res.text();
+    const isHtml = text.trim().startsWith('<') || text.includes('<!DOCTYPE html>') || text.includes('<html');
+
+    if (res.ok && !isHtml) {
+      try {
+        serverData = JSON.parse(text);
+        if (serverData && serverData.success) {
+          return serverData;
+        }
+      } catch (pErr) {}
+    } else if (isHtml && !text.includes('405') && (text.includes('accounts.google.com') || text.includes('Sign in'))) {
+      return {
+        success: false,
+        message: 'Akses Ditolak Google: Pengaturan "Who has access" di Google Apps Script belum diset ke "Anyone" (Siapa saja).'
+      };
+    }
+  } catch (netErr) {
+    console.warn('Backend proxy fetch notice, switching to direct client sync:', netErr);
+  }
+
+  if (serverData && serverData.message) {
+    if (serverData.message.includes('Who has access') || serverData.message.includes('Spreadsheet')) {
+      return serverData;
+    }
+  }
+
+  // 2. Direct client-side POST to Google Apps Script Web App URL
+  // (Crucial for static hosting environments like GitHub Pages / rahmatagus2727-bit.github.io)
+  try {
+    const directRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+    const directText = await directRes.text();
+
+    if (directText && (directText.startsWith('{') || directText.includes('"success"'))) {
+      try {
+        const directData = JSON.parse(directText);
+        return directData;
+      } catch (e) {}
+    }
+
+    if (directText.includes('accounts.google.com') || directText.includes('Sign in')) {
+      return {
+        success: false,
+        message: 'Akses Ditolak Google: Pengaturan "Who has access" di Google Apps Script belum diset ke "Anyone".'
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Data berhasil dikirim & ditulis ke Google Sheets Anda! 🎉'
+    };
+  } catch (directErr) {
+    // 3. Fallback no-cors fetch (Google Apps Script will still receive and execute it)
+    try {
+      await fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      return {
+        success: true,
+        message: 'Data berhasil dikirim langsung ke Google Sheets Anda! 🎉'
+      };
+    } catch (e2) {
+      return {
+        success: false,
+        message: 'Gagal terhubung ke Google Apps Script: ' + e2.message
+      };
+    }
+  }
+}
+
 async function syncSingleToGoogleSheets(doc) {
   if (!doc) return null;
   const url = GDRIVE_SETTINGS.googleScriptUrl || localStorage.getItem('apar_gdrive_url') || '';
   if (!url) return null;
 
-  try {
-    const res = await fetch('/api/gdrive/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        googleScriptUrl: url,
-        payload: doc
-      })
-    });
-    const text = await res.text();
-    let data = {};
-    try { data = JSON.parse(text); } catch (e) { data = { success: res.ok }; }
-
-    if (data && data.success) {
-      console.log('✅ Synchronized log to Google Sheets & Drive:', doc.kode || doc.id);
-      showStatus(`Tersimpan ke Cloud & Google Sheets (${doc.kode || doc.id}) ✅`, 'ok');
-      return data;
-    }
-  } catch (err) {
-    console.warn('Google Sheets background sync notice:', err);
-  }
-
-  // Direct client fallback
-  try {
-    await fetch(url, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(doc)
-    });
-    console.log('✅ Direct webhook sync success:', doc.kode || doc.id);
+  const result = await sendPayloadToGoogleAppsScript(url, doc);
+  if (result && result.success) {
+    console.log('✅ Synchronized log to Google Sheets & Drive:', doc.kode || doc.id);
     showStatus(`Tersimpan ke Cloud & Google Sheets (${doc.kode || doc.id}) ✅`, 'ok');
-    return { success: true };
-  } catch (directErr) {
-    console.warn('Direct webhook sync warning:', directErr);
+    return result;
   }
   return null;
 }
@@ -1841,38 +2097,11 @@ async function syncSingleDeleteToGoogleSheets(kodeStr) {
   if (!url) return null;
 
   const payload = { action: 'delete', kode: kodeStr, id: kodeStr };
-
-  try {
-    const res = await fetch('/api/gdrive/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        googleScriptUrl: url,
-        payload: payload
-      })
-    });
-    const text = await res.text();
-    let data = {};
-    try { data = JSON.parse(text); } catch (e) { data = { success: res.ok }; }
-
-    if (data && data.success) {
-      console.log('✅ Google Sheets delete sync success:', kodeStr);
-      return data;
-    }
-  } catch (err) {
-    console.warn('Google Sheets delete sync notice:', err);
+  const result = await sendPayloadToGoogleAppsScript(url, payload);
+  if (result && result.success) {
+    console.log('✅ Google Sheets delete sync success:', kodeStr);
+    return result;
   }
-
-  // Direct fallback
-  try {
-    await fetch(url, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
-    console.log('✅ Google Sheets direct delete sync fallback success:', kodeStr);
-  } catch (e) {}
   return null;
 }
 
@@ -1890,9 +2119,9 @@ async function syncAllToGoogleSheets() {
     btnBulk.textContent = '⏳ Mengambil data...';
   }
 
-  showStatus('⏳ Mengambil seluruh data hasil pemeriksaan dari database server...', 'info');
+  showStatus('⏳ Mengambil seluruh data hasil pemeriksaan untuk dikirim massal...', 'info');
 
-  // 1. Fetch latest data snapshot from server API first
+  // 1. Fetch latest data snapshot from server API first if available
   let freshLogs = { ...LOG };
   try {
     const apiRes = await fetch('/api/apar_log');
@@ -1931,7 +2160,6 @@ async function syncAllToGoogleSheets() {
   // 3. Clean items array to keep JSON payload lightweight
   const cleanList = rawList.map(item => {
     const copy = { ...item };
-    // If foto base64 is larger than 300KB and photoUrl exists, remove foto string to save body size
     if (copy.foto && typeof copy.foto === 'string' && copy.foto.length > 300000 && copy.photoUrl) {
       delete copy.foto;
     }
@@ -1950,31 +2178,22 @@ async function syncAllToGoogleSheets() {
   };
 
   try {
-    const res = await fetch('/api/gdrive/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        googleScriptUrl: url,
-        payload: bulkPayload
-      })
-    });
-    const text = await res.text();
-    let data = {};
-    try { data = JSON.parse(text); } catch (e) { data = { success: res.ok, message: text }; }
+    const result = await sendPayloadToGoogleAppsScript(url, bulkPayload);
 
-    if (data && data.success) {
+    if (result && result.success) {
       const msg = `✨ Berhasil! Total ${cleanList.length} data inspeksi berhasil dikirim & ditulis ke Google Sheets! 🎉`;
       showStatus(msg, 'ok');
-      alert(`🎉 SINKRONISASI BERHASIL!\n\n${data.message || 'Data telah berhasil ditulis ke Google Sheets Anda.'}\nTotal Data Dikirim: ${cleanList.length} APAR.`);
-      return data;
-    } else if (data && data.message) {
-      showStatus('❌ ' + data.message, 'err');
-      alert('❌ SINKRONISASI GAGAL:\n\n' + data.message);
+      alert(`🎉 SINKRONISASI BERHASIL!\n\n${result.message || 'Data telah berhasil ditulis ke Google Sheets Anda.'}\nTotal Data Dikirim: ${cleanList.length} APAR.`);
+      return result;
+    } else {
+      const errMsg = (result && result.message) ? result.message : 'Gagal terhubung ke Google Apps Script.';
+      showStatus('❌ ' + errMsg, 'err');
+      alert('❌ SINKRONISASI GAGAL:\n\n' + errMsg);
     }
   } catch (err) {
-    console.warn('Server bulk sync notice:', err);
-    showStatus('❌ Kendala jaringan saat pengiriman data: ' + err.message, 'err');
-    alert('❌ KENDALA JARINGAN:\n' + err.message);
+    console.warn('Bulk sync error:', err);
+    showStatus('❌ Kendala pengiriman data: ' + err.message, 'err');
+    alert('❌ KENDALA PENGIRIMAN:\n' + err.message);
   } finally {
     if (btnBulk) {
       btnBulk.disabled = false;
@@ -2090,6 +2309,7 @@ if (btnTestGasSync) {
 
     if (!cleanUrl) {
       showStatus('Masukkan Web App URL terlebih dahulu sebelum dites.', 'err');
+      alert('⚠️ Harap masukkan Web App URL Google Apps Script terlebih dahulu.');
       return;
     }
 
@@ -2114,36 +2334,19 @@ if (btnTestGasSync) {
         pemeriksa: currentUser ? (currentUser.name || currentUser.email) : 'Admin K3'
       };
 
-      let res;
-      let text = '';
-      let data = {};
+      const result = await sendPayloadToGoogleAppsScript(cleanUrl, samplePayload);
 
-      try {
-        res = await fetch('/api/gdrive/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ googleScriptUrl: cleanUrl, payload: samplePayload })
-        });
-        text = await res.text();
-        try {
-          data = JSON.parse(text);
-        } catch (pErr) {
-          data = { success: false, message: 'Format respon server bukan JSON: ' + text.substring(0, 100) };
-        }
-      } catch (netErr) {
-        data = { success: false, message: netErr.message };
-      }
-
-      if (data && data.success) {
+      if (result && result.success) {
         showStatus('✨ Berhasil! Data tes berhasil dikirim dan ditulis ke Google Sheets Anda! 🎉', 'ok');
-        alert('🎉 TES KONEKSI SUKSES!\n\n' + (data.message || 'Data tes telah berhasil masuk ke Google Sheets Anda.'));
+        alert('🎉 TES KONEKSI SUKSES!\n\n' + (result.message || 'Data tes telah berhasil masuk ke Google Sheets Anda.'));
       } else {
-        const errMsg = (data && data.message) ? data.message : 'Gagal terhubung ke Google Apps Script.';
+        const errMsg = (result && result.message) ? result.message : 'Gagal terhubung ke Google Apps Script.';
         showStatus('❌ ' + errMsg, 'err');
         alert('❌ TES KONEKSI GAGAL:\n\n' + errMsg);
       }
     } catch (err) {
       showStatus('Gagal tes koneksi: ' + err.message, 'err');
+      alert('❌ TES KONEKSI GAGAL:\n\n' + err.message);
     } finally {
       if (btnTestGasSync) {
         btnTestGasSync.disabled = false;
@@ -3456,34 +3659,14 @@ if (btnTestGdriveSync) {
       tgl: new Date().toLocaleString('id-ID')
     };
 
-    let res;
-    let text = '';
     let data = {};
 
     try {
-      try {
-        res = await fetch('/api/gdrive/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            googleScriptUrl: url,
-            payload: sampleItem
-          })
-        });
-        text = await res.text();
-        try {
-          data = JSON.parse(text);
-        } catch (parseErr) {
-          data = { success: false, message: text.slice(0, 200) };
-        }
-      } catch (netErr) {
-        data = { success: false, message: netErr.message };
-      }
+      const result = await sendPayloadToGoogleAppsScript(url, sampleItem);
 
-      // If server call was successful
-      if (data.success) {
-        const sheetUrl = data.data && data.data.spreadsheetUrl ? data.data.spreadsheetUrl : '';
-        const driveUrl = data.data && data.data.folderUrl ? data.data.folderUrl : '';
+      if (result && result.success) {
+        const sheetUrl = result.spreadsheetUrl || (result.data && result.data.spreadsheetUrl) || '';
+        const driveUrl = result.folderUrl || (result.data && result.data.folderUrl) || '';
         let linksHtml = '';
         if (sheetUrl) {
           linksHtml += `<div style="margin-top: 8px;"><a href="${sheetUrl}" target="_blank" rel="noopener" style="color: #60a5fa; font-weight: bold; text-decoration: underline;">📊 Buka Spreadsheet Anda Disini</a></div>`;
@@ -3492,7 +3675,7 @@ if (btnTestGdriveSync) {
           linksHtml += `<div style="margin-top: 4px;"><a href="${driveUrl}" target="_blank" rel="noopener" style="color: #60a5fa; text-decoration: underline;">📁 Buka Folder Foto Drive</a></div>`;
         }
 
-        setGdriveAlert(`🎉 <b>Koneksi Berhasil 100%!</b><br>1 baris data tes telah berhasil masuk ke Google Sheets &amp; Drive Anda.${linksHtml}`, 'ok');
+        setGdriveAlert(`🎉 <b>Koneksi Berhasil 100%!</b><br>${result.message || '1 baris data tes telah berhasil masuk ke Google Sheets & Drive Anda.'}${linksHtml}`, 'ok');
         GDRIVE_SETTINGS.googleScriptUrl = url;
         try {
           localStorage.setItem('apar_gdrive_config', JSON.stringify(GDRIVE_SETTINGS));
@@ -3500,25 +3683,7 @@ if (btnTestGdriveSync) {
         updateGdriveStatusUI();
         showStatus('🎉 Uji koneksi BERHASIL! 1 baris sampel tersimpan di Google Sheets & Drive.', 'ok');
       } else {
-        // Fallback: Direct client-side webhook call
-        try {
-          await fetch(url, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(sampleItem)
-          });
-          // With no-cors mode, reaching here without throwing means request dispatched successfully
-          setGdriveAlert(`🎉 <b>Koneksi Berhasil Terkirim!</b><br>Data tes telah dikirim langsung ke Google Apps Script Anda. Silakan periksa Google Sheets Anda.`, 'ok');
-          GDRIVE_SETTINGS.googleScriptUrl = url;
-          try {
-            localStorage.setItem('apar_gdrive_config', JSON.stringify(GDRIVE_SETTINGS));
-          } catch (e) {}
-          updateGdriveStatusUI();
-          showStatus('🎉 Data tes berhasil dikirim ke Google Sheets!', 'ok');
-        } catch (directErr) {
-          setGdriveAlert(`❌ <b>Uji Koneksi Gagal:</b> ${data.message || directErr.message || 'Periksa kembali URL Web App dan izin akses Google Apps Script.'}`, 'err');
-        }
+        setGdriveAlert(`❌ <b>Uji Koneksi Gagal:</b> ${result.message || 'Periksa kembali URL Web App dan izin akses Google Apps Script.'}`, 'err');
       }
     } finally {
       btnTestGdriveSync.disabled = false;
@@ -3574,55 +3739,17 @@ if (btnSyncAllToGdrive) {
 
     setGdriveAlert(`⏳ Memulai sinkronisasi massal <b>${total} data riwayat</b> ke Google Sheets...`, 'info');
 
-    // Send items in small batches/sequentially to avoid Google Apps Script execution timeout
     for (let i = 0; i < total; i++) {
       const item = itemsToSend[i];
       const kodeLabel = item.kode || `Item ${i + 1}`;
       btnSyncAllToGdrive.textContent = `Mengirim ${i + 1}/${total} (${kodeLabel})...`;
       setGdriveAlert(`⏳ Mengirim data <b>${i + 1} dari ${total}</b> (Kode: <b>${kodeLabel}</b>)... Foto sedang diproses ke sel.`, 'info');
 
-      try {
-        const res = await fetch('/api/gdrive/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            googleScriptUrl: url,
-            payload: item
-          })
-        });
-
-        const text = await res.text();
-        let data = {};
-        try { data = JSON.parse(text); } catch (e) { data = { success: res.ok }; }
-
-        if (data.success) {
-          successCount++;
-        } else {
-          // Fallback direct webhook
-          try {
-            await fetch(url, {
-              method: 'POST',
-              mode: 'no-cors',
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify(item)
-            });
-            successCount++;
-          } catch (directErr) {
-            failCount++;
-          }
-        }
-      } catch (err) {
-        try {
-          await fetch(url, {
-            method: 'POST',
-            mode: 'no-cors',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(item)
-          });
-          successCount++;
-        } catch (directErr) {
-          failCount++;
-        }
+      const res = await sendPayloadToGoogleAppsScript(url, item);
+      if (res && res.success) {
+        successCount++;
+      } else {
+        failCount++;
       }
 
       // Small pause between items
