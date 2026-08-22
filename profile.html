@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Profil Pengguna - Sobat My APAR</title>
+  <link rel="stylesheet" href="style.css">
+  <script>
+    (function() {
+      try {
+        var savedTheme = localStorage.getItem('apar_theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      } catch(e) {}
+    })();
+  </script>
+</head>
+<body class="min-h-screen flex flex-col justify-between pb-24">
+
+  <!-- Top Header Bar -->
+  <header style="background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="width: 36px; height: 36px; background: rgba(239, 68, 68, 0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">
+        🦉
+      </div>
+      <h1 style="font-size: 1.1rem; font-weight: 800; margin: 0; color: var(--text-main);">Profil Pengguna</h1>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <button type="button" class="btn-theme-toggle" onclick="toggleAppTheme()" title="Ubah Mode Tampilan">
+        <span class="theme-icon">🌙</span> <span class="theme-text">Mode Gelap</span>
+      </button>
+      <a href="index.html" style="font-size: 0.85rem; font-weight: 700; color: #ef4444; text-decoration: none; padding: 6px 12px; background: rgba(239,68,68,0.1); border-radius: 8px;">Home</a>
+    </div>
+  </header>
+
+  <!-- Status Toast Message -->
+  <div id="profileToast" class="hidden" style="position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10000; padding: 12px 24px; border-radius: 9999px; font-size: 0.9rem; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,0.3); transition: all 0.3s; text-align: center; max-width: 90%;"></div>
+
+  <!-- Main Profile Container -->
+  <main style="max-width: 500px; width: 100%; margin: 24px auto; padding: 0 16px;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.05);">
+      
+      <!-- User Bio Header -->
+      <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--border);">
+        <div id="profileAvatar" style="width: 72px; height: 72px; background: linear-gradient(135deg, #f59e0b, #d97706); color: #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; font-weight: bold; box-shadow: inset 0 2px 4px rgba(0,0,0,0.06); flex-shrink: 0;">
+          👑
+        </div>
+        <div>
+          <h2 id="profileName" style="font-size: 1.25rem; font-weight: 800; color: var(--text-main); margin: 0 0 4px 0;">Admin K3</h2>
+          <p id="profileEmail" style="font-size: 0.85rem; color: var(--text-muted); margin: 0; word-break: break-all;">admin@apar.id</p>
+          <span id="profileRoleBadge" style="display: inline-block; margin-top: 6px; font-size: 0.72rem; font-weight: 700; background: rgba(14,165,233,0.1); color: #0284c7; padding: 2px 8px; border-radius: 9999px;">Administrator K3</span>
+        </div>
+      </div>
+
+      <div style="font-size: 0.9rem; font-weight: 700; color: var(--text-muted); margin-bottom: 12px; letter-spacing: 0.02em;">Pengaturan Akun</div>
+
+      <!-- Menu Options (Only Ubah Password, Cloud/Kelola removed) -->
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        
+        <!-- Ubah Password Option Button -->
+        <div onclick="openPasswordModal()" style="display: flex; justify-content: space-between; align-items: center; padding: 14px 12px; border-radius: 12px; cursor: pointer; transition: background 0.2s; background: var(--bg-card-inner); border: 1px solid var(--border);" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 38px; height: 38px; background: rgba(220, 38, 38, 0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">
+              🔒
+            </div>
+            <div>
+              <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main);">Ubah PIN / Password</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Perbarui kata sandi akses akun login Anda</div>
+            </div>
+          </div>
+          <span style="color: var(--text-muted); font-weight: bold; font-size: 1.2rem;">›</span>
+        </div>
+
+      </div>
+
+      <!-- Logout Button -->
+      <div style="margin-top: 28px;">
+        <button type="button" onclick="handleLogout()" style="width: 100%; background: #ef4444; color: #ffffff; border: none; border-radius: 14px; padding: 14px; font-weight: 700; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35); transition: background 0.2s;">
+          <span style="font-size: 1.2rem;">🚪</span> Logout
+        </button>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Modal Dialog Ubah Password (Interactive UI without blocked prompt) -->
+  <div id="passwordModal" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 420px; width: 100%;">
+      <div class="modal-header">
+        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 800; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
+          <span>🔒</span> Ubah PIN / Password
+        </h3>
+        <button type="button" class="btn-close-modal" onclick="closePasswordModal()">✕</button>
+      </div>
+
+      <form id="formUpdatePassword" onsubmit="submitNewPassword(event)" style="margin-top: 14px; display: flex; flex-direction: column; gap: 14px;">
+        <div class="form-group">
+          <label for="newPassInput" style="font-weight: 700;">Password / PIN Baru *</label>
+          <div class="auth-input-pill password-box" style="padding-right: 8px;">
+            <span class="auth-input-icon">🔑</span>
+            <input type="password" id="newPassInput" placeholder="Minimal 3 karakter" required minlength="3" autocomplete="new-password" />
+            <button type="button" class="password-eye-btn" onclick="togglePassVisibility('newPassInput', this)">👁️</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="confirmPassInput" style="font-weight: 700;">Ulangi Password Baru *</label>
+          <div class="auth-input-pill password-box" style="padding-right: 8px;">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="confirmPassInput" placeholder="Konfirmasi password" required minlength="3" autocomplete="new-password" />
+            <button type="button" class="password-eye-btn" onclick="togglePassVisibility('confirmPassInput', this)">👁️</button>
+          </div>
+        </div>
+
+        <div id="passErrorMsg" class="hidden" style="color: #ef4444; font-size: 0.8rem; font-weight: 600; padding: 6px 10px; background: rgba(239, 68, 68, 0.1); border-radius: 6px;"></div>
+
+        <div style="display: flex; gap: 10px; margin-top: 8px;">
+          <button type="button" onclick="closePasswordModal()" class="btn btn-secondary" style="flex: 1; border-radius: 9999px;">
+            Batal
+          </button>
+          <button type="submit" id="btnSavePassword" class="btn btn-primary" style="flex: 1.5; border-radius: 9999px; font-weight: 700;">
+            💾 Simpan Password
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Bottom Navigation Bar -->
+  <div style="position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg-card); border-top: 1px solid var(--border); padding: 10px 24px; display: flex; justify-content: space-around; align-items: center; z-index: 1000; box-shadow: 0 -4px 20px rgba(0,0,0,0.08);">
+    <button type="button" onclick="window.location.href='index.html'" style="background: transparent; border: none; border-radius: 9999px; padding: 8px 24px; display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-weight: 700; font-size: 0.85rem; cursor: pointer;" title="Home">
+      <span style="font-size: 1.1rem;">🏠</span> Home
+    </button>
+    <button type="button" style="background: linear-gradient(135deg, #ef4444, #dc2626); border: none; border-radius: 9999px; padding: 8px 20px; display: flex; align-items: center; gap: 8px; color: #fff; font-weight: 700; font-size: 0.85rem; cursor: pointer; box-shadow: 0 4px 14px rgba(220,38,38,0.35);" title="Profile">
+      <span style="font-size: 1.1rem;">👤</span> Profile
+    </button>
+  </div>
+
+  <script>
+    let currentUser = null;
+
+    try {
+      const storedUser = localStorage.getItem('apar_current_user');
+      if (storedUser) {
+        currentUser = JSON.parse(storedUser);
+        const isAdmin = (currentUser.role === 'admin' || currentUser.id === 'user_admin');
+        
+        if (currentUser.name) document.getElementById('profileName').textContent = currentUser.name;
+        if (currentUser.email || currentUser.id) document.getElementById('profileEmail').textContent = currentUser.email || currentUser.id;
+        
+        const badge = document.getElementById('profileRoleBadge');
+        badge.textContent = isAdmin ? 'Administrator K3' : 'Petugas Lapangan';
+        badge.style.background = isAdmin ? 'rgba(14,165,233,0.1)' : 'rgba(16,185,129,0.1)';
+        badge.style.color = isAdmin ? '#0284c7' : '#059669';
+
+        const avatarEl = document.getElementById('profileAvatar');
+        if (isAdmin) {
+          avatarEl.textContent = '👑';
+          avatarEl.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
+        } else {
+          avatarEl.textContent = (currentUser.name || currentUser.email || 'P')[0].toUpperCase();
+          avatarEl.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+        }
+      }
+    } catch(e) {}
+
+    function showToast(msg, isSuccess = true) {
+      const toast = document.getElementById('profileToast');
+      if (!toast) return;
+      toast.textContent = msg;
+      toast.style.background = isSuccess ? '#10b981' : '#ef4444';
+      toast.style.color = '#ffffff';
+      toast.classList.remove('hidden');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 3500);
+    }
+
+    function updateThemeUI(theme) {
+      const isDark = (theme === 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+      try { localStorage.setItem('apar_theme', theme); } catch (e) {}
+
+      const icons = document.querySelectorAll('.theme-icon');
+      const texts = document.querySelectorAll('.theme-text');
+      icons.forEach(el => el.textContent = isDark ? '☀️' : '🌙');
+      texts.forEach(el => el.textContent = isDark ? 'Mode Terang' : 'Mode Gelap');
+    }
+
+    function toggleAppTheme() {
+      const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      updateThemeUI(next);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const saved = document.documentElement.getAttribute('data-theme') || 'light';
+      updateThemeUI(saved);
+    });
+
+    function openPasswordModal() {
+      document.getElementById('passwordModal').classList.remove('hidden');
+      document.getElementById('newPassInput').value = '';
+      document.getElementById('confirmPassInput').value = '';
+      document.getElementById('passErrorMsg').classList.add('hidden');
+      document.getElementById('newPassInput').focus();
+    }
+
+    function closePasswordModal() {
+      document.getElementById('passwordModal').classList.add('hidden');
+    }
+
+    function togglePassVisibility(inputId, btn) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      const isPass = input.type === 'password';
+      input.type = isPass ? 'text' : 'password';
+      btn.textContent = isPass ? '🔒' : '👁️';
+    }
+
+    async function submitNewPassword(e) {
+      e.preventDefault();
+      const newPass = document.getElementById('newPassInput').value.trim();
+      const confirmPass = document.getElementById('confirmPassInput').value.trim();
+      const errEl = document.getElementById('passErrorMsg');
+      const saveBtn = document.getElementById('btnSavePassword');
+
+      if (newPass.length < 3) {
+        errEl.textContent = 'Password baru minimal 3 karakter.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      if (newPass !== confirmPass) {
+        errEl.textContent = 'Konfirmasi password tidak cocok dengan password baru.';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      errEl.classList.add('hidden');
+      saveBtn.disabled = true;
+      saveBtn.textContent = '⏳ Menyimpan...';
+
+      try {
+        const payload = {
+          email: currentUser ? (currentUser.email || currentUser.id) : '',
+          id: currentUser ? currentUser.id : '',
+          password: newPass
+        };
+
+        const res = await fetch('/api/users/update-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          if (currentUser) {
+            currentUser.password = newPass;
+            localStorage.setItem('apar_current_user', JSON.stringify(currentUser));
+          }
+          closePasswordModal();
+          showToast('✅ Password berhasil diperbarui & disinkronkan ke Admin K3!', true);
+        } else {
+          errEl.textContent = data.message || 'Gagal memperbarui password.';
+          errEl.classList.remove('hidden');
+        }
+      } catch (err) {
+        if (currentUser) {
+          currentUser.password = newPass;
+          localStorage.setItem('apar_current_user', JSON.stringify(currentUser));
+        }
+        closePasswordModal();
+        showToast('✅ Password diperbarui secara lokal.', true);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '💾 Simpan Password';
+      }
+    }
+
+    function handleLogout() {
+      try {
+        localStorage.removeItem('apar_current_user');
+      } catch(e) {}
+      window.location.href = 'index.html';
+    }
+  </script>
+</body>
+</html>

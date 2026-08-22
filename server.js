@@ -220,7 +220,9 @@ async function rebuildCorruptedDatabase() {
   } catch (e) {}
 
   if (!SQL) {
-    SQL = await initSqlJs();
+    SQL = await initSqlJs({
+      locateFile: file => path.join(__dirname, 'node_modules', 'sql.js', 'dist', file)
+    });
   }
   sqliteDb = new SQL.Database();
   createTables(sqliteDb);
@@ -231,7 +233,9 @@ async function rebuildCorruptedDatabase() {
 
 async function initSqliteEngine() {
   try {
-    SQL = await initSqlJs();
+    SQL = await initSqlJs({
+      locateFile: file => path.join(__dirname, 'node_modules', 'sql.js', 'dist', file)
+    });
     let loadedFromDisk = false;
 
     if (fs.existsSync(SQLITE_FILE)) {
@@ -268,6 +272,8 @@ async function initSqliteEngine() {
     }
   }
 }
+
+const dbReadyPromise = initSqliteEngine();
 
 function persistSqliteToDisk() {
   if (!sqliteDb) return;
@@ -581,6 +587,80 @@ function getAllPeriodArchivesFromSqlite() {
   }
 }
 
+function saveExcelRecapToStorage(periodLabel, logs) {
+  try {
+    const safeName = (periodLabel || 'Periode').replace(/[^a-zA-Z0-9]/g, '_');
+    const folderPath = path.join(DATA_DIR, 'rekap_apar', `Data_Apar_${safeName}`);
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+
+    const fileName = `Rekap_Apar_${safeName}_100_Progress.xls`;
+    const filePath = path.join(folderPath, fileName);
+
+    let html = `\ufeff<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"/><title>Rekap APAR ${periodLabel}</title></head>
+<body>
+<h2>REKAPITULASI PEMERIKSAAN APAR - PERIODE ${periodLabel.toUpperCase()} (100% PROGRESS SELESAI)</h2>
+<table border="1">
+  <tr style="background-color: #0284c7; color: #ffffff; font-weight: bold;">
+    <th>No</th>
+    <th>Kode APAR</th>
+    <th>Gedung</th>
+    <th>Ruangan</th>
+    <th>Lantai</th>
+    <th>Merk</th>
+    <th>Kapasitas</th>
+    <th>Jenis Gas</th>
+    <th>Kebersihan Tabung</th>
+    <th>Indikator Tekanan</th>
+    <th>Kunci Pengaman</th>
+    <th>Selang Semprot</th>
+    <th>Nozzle</th>
+    <th>Tag Label</th>
+    <th>Status</th>
+    <th>Keterangan</th>
+    <th>Pemeriksa</th>
+    <th>Tanggal Pemeriksaan</th>
+    <th>Progress</th>
+  </tr>`;
+
+    const items = Object.values(logs || {});
+    items.forEach((item, idx) => {
+      html += `<tr>
+        <td>${idx + 1}</td>
+        <td>${item.kode || item.id || '-'}</td>
+        <td>${item.gedung || '-'}</td>
+        <td>${item.ruangan || '-'}</td>
+        <td>${item.lantai || '-'}</td>
+        <td>${item.merk || '-'}</td>
+        <td>${item.kapasitas || '-'}</td>
+        <td>${item.jenisGas || '-'}</td>
+        <td>${item.kebersihanTabung || '-'}</td>
+        <td>${item.indikatorTekanan || '-'}</td>
+        <td>${item.kunciPengaman || '-'}</td>
+        <td>${item.selangSemprot || '-'}</td>
+        <td>${item.nozzle || '-'}</td>
+        <td>${item.tagLabel || '-'}</td>
+        <td>${item.status || 'OK'}</td>
+        <td>${item.keterangan || '-'}</td>
+        <td>${item.pemeriksa || '-'}</td>
+        <td>${item.tanggal || '-'}</td>
+        <td>100% (Selesai)</td>
+      </tr>`;
+    });
+
+    html += `</table></body></html>`;
+
+    fs.writeFileSync(filePath, html, 'utf-8');
+    console.log(`📊 Saved Excel recap file for ${periodLabel} at ${filePath}`);
+    return filePath;
+  } catch (err) {
+    console.error('Error saving Excel recap to storage:', err);
+    return null;
+  }
+}
+
 async function archiveCurrentPeriodAndStartNext(triggeredBy = 'Sistem', customNextKey = null) {
   const currentInfo = getCurrentPeriodInfo();
   const currentLogs = getAllInspectionsFromSqlite();
@@ -593,6 +673,9 @@ async function archiveCurrentPeriodAndStartNext(triggeredBy = 'Sistem', customNe
     if (item.status === 'OK' || item.status === 'good') goodItems++;
     else badItems++;
   });
+
+  // Save 100% Progress Excel recap file into dedicated folder structure
+  saveExcelRecapToStorage(currentInfo.activePeriodLabel, currentLogs);
 
   const nextInfo = customNextKey ? {
     periodKey: customNextKey,
@@ -801,6 +884,30 @@ function getUnreadNotificationCount() {
     return 0;
   }
 }
+
+// Ensure database is ready before serving any API requests
+app.use('/api/', async (req, res, next) => {
+  try {
+    if (dbReadyPromise) {
+      await dbReadyPromise;
+    }
+  } catch (e) {
+    console.warn('DB readiness wait warning:', e);
+  }
+  
+  if (!sqliteDb) {
+    // Attempt emergency instant in-memory fallback so it never throws 500
+    try {
+      if (SQL && !sqliteDb) {
+        sqliteDb = new SQL.Database();
+        createTables(sqliteDb);
+      }
+    } catch (fallbackErr) {
+      console.error('Emergency sqlite init failed:', fallbackErr);
+    }
+  }
+  next();
+});
 
 // -------------------------------------------------------------
 // Real-Time Server-Sent Events (SSE) Endpoint
@@ -1045,6 +1152,89 @@ app.delete('/api/apar_log', (req, res) => {
 
   broadcastUpdate({ type: 'reset', notification: resetNotif, timestamp: Date.now() });
   res.json({ success: true, message: 'Semua log SQLite berhasil direset.', notification: resetNotif });
+});
+
+// Clear All Cache & Optimize Database Endpoint (Physical Memory & Disk Saver for cPanel)
+app.post('/api/clear_cache', (req, res) => {
+  try {
+    if (sqliteDb) {
+      // Clear old read notifications & audit logs older than 3 days
+      sqliteDb.run("DELETE FROM notifications WHERE is_read = 1");
+      sqliteDb.run("DELETE FROM audit_logs WHERE created_at < datetime('now', '-3 days')");
+      // Vacuum SQLite to reclaim space and optimize file size
+      sqliteDb.run("VACUUM");
+      persistSqliteToDisk();
+    }
+
+    // Clean up any temp or corrupt backup files
+    const files = fs.readdirSync(DATA_DIR);
+    let cleanedCount = 0;
+    files.forEach(file => {
+      if (file.endsWith('.tmp') || file.endsWith('.bak') || file.includes('.corrupt_')) {
+        try {
+          fs.unlinkSync(path.join(DATA_DIR, file));
+          cleanedCount++;
+        } catch (e) {}
+      }
+    });
+
+    if (global.gc) {
+      try { global.gc(); } catch (e) {}
+    }
+
+    const memUsage = process.memoryUsage();
+    const rssMb = Math.round(memUsage.rss / 1024 / 1024);
+    const heapMb = Math.round(memUsage.heapUsed / 1024 / 1024);
+
+    res.json({
+      success: true,
+      message: `Cache server berhasil dibersihkan! SQLite dioptimalkan (VACUUM), ${cleanedCount} file temporary dihapus.`,
+      memoryUsage: { rss: `${rssMb} MB`, heap: `${heapMb} MB` }
+    });
+  } catch (err) {
+    console.error('Error clearing server cache:', err);
+    res.status(500).json({ success: false, message: 'Gagal membersihkan cache: ' + err.message });
+  }
+});
+
+// Download 100% Progress Excel Recap Endpoint
+app.get('/api/rekap/download/:periodKey', (req, res) => {
+  const periodKey = req.params.periodKey;
+  try {
+    const rekapDir = path.join(DATA_DIR, 'rekap_apar');
+    if (!fs.existsSync(rekapDir)) {
+      return res.status(404).json({ success: false, message: 'Folder rekap excel belum tersedia.' });
+    }
+    const folders = fs.readdirSync(rekapDir);
+    for (const folder of folders) {
+      const folderPath = path.join(rekapDir, folder);
+      if (fs.statSync(folderPath).isDirectory()) {
+        const files = fs.readdirSync(folderPath);
+        for (const file of files) {
+          if (file.endsWith('.xls') || file.endsWith('.xlsx')) {
+            if (folder.toLowerCase().includes(periodKey.toLowerCase()) || file.toLowerCase().includes(periodKey.toLowerCase())) {
+              return res.download(path.join(folderPath, file));
+            }
+          }
+        }
+      }
+    }
+    // Fallback: return any available excel recap file
+    for (const folder of folders) {
+      const folderPath = path.join(rekapDir, folder);
+      if (fs.statSync(folderPath).isDirectory()) {
+        const files = fs.readdirSync(folderPath);
+        for (const file of files) {
+          if (file.endsWith('.xls') || file.endsWith('.xlsx')) {
+            return res.download(path.join(folderPath, file));
+          }
+        }
+      }
+    }
+    res.status(404).json({ success: false, message: 'File rekap Excel untuk periode tersebut tidak ditemukan.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // -------------------------------------------------------------
@@ -1297,6 +1487,52 @@ app.post('/api/users', (req, res) => {
         message: `Akun "${cleanName}" (${cleanRole}) berhasil dibuat.`,
         user: { id: newId, email: cleanEmail, name: cleanName, role: cleanRole, password: cleanPass }
       });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  res.status(500).json({ success: false, message: 'Database server belum siap.' });
+});
+
+app.post('/api/users/update-password', (req, res) => {
+  const { email, id, password } = req.body;
+  if (!password) {
+    return res.status(400).json({ success: false, message: 'Password baru wajib diisi.' });
+  }
+  const cleanPass = String(password).trim();
+  const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+  const cleanId = id ? String(id).trim() : '';
+
+  if (sqliteDb) {
+    try {
+      if (cleanEmail) {
+        sqliteDb.run("UPDATE users SET password = ? WHERE lower(email) = ? OR lower(id) = ?", [cleanPass, cleanEmail, cleanEmail]);
+      } else if (cleanId) {
+        sqliteDb.run("UPDATE users SET password = ? WHERE lower(id) = ? OR lower(email) = ?", [cleanPass, cleanId.toLowerCase(), cleanId.toLowerCase()]);
+      } else {
+        return res.status(400).json({ success: false, message: 'Identitas user tidak valid.' });
+      }
+      persistSqliteToDisk();
+
+      try {
+        const all = sqliteDb.exec("SELECT id, email, name, password, role, created_at FROM users");
+        if (all && all[0]) {
+          const list = all[0].values.map(([id, email, name, password, role, created_at]) => ({
+            id, email, name, password, role, created_at
+          }));
+          fs.writeFileSync(USERS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+        }
+      } catch (e) {}
+
+      broadcastUpdate({
+        type: 'user_password_updated',
+        email: cleanEmail,
+        id: cleanId,
+        timestamp: Date.now()
+      });
+
+      return res.json({ success: true, message: 'Password berhasil diperbarui!' });
     } catch (err) {
       return res.status(500).json({ success: false, message: err.message });
     }
@@ -1719,26 +1955,23 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Initialize SQLite Engine and Start Server (cPanel Passenger Compatible)
+// Start server IMMEDIATELY for cPanel Passenger to prevent 503 Service Unavailable timeouts
+const activePort = process.env.PORT || PORT;
+const serverListener = () => {
+  console.log(`🚀 APAR Server listening on PORT: ${activePort}`);
+};
+
+if (process.env.PORT) {
+  app.listen(process.env.PORT, serverListener);
+} else {
+  app.listen(activePort, '0.0.0.0', serverListener);
+}
+
+// Initialize SQLite Engine in the background
 initSqliteEngine().then(() => {
-  const PORT = process.env.PORT || 3000;
-  if (process.env.PORT) {
-    app.listen(process.env.PORT, () => {
-      console.log(`🚀 APAR Realtime & SQLite Server running on cPanel (PORT: ${process.env.PORT})`);
-    });
-  } else {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 APAR Realtime & SQLite Server running locally at http://0.0.0.0:${PORT}`);
-    });
-  }
+  console.log('✅ SQLite database engine fully initialized and ready.');
 }).catch(err => {
   console.error("Failed to initialize SQLite engine:", err);
-  const PORT = process.env.PORT || 3000;
-  if (process.env.PORT) {
-    app.listen(process.env.PORT);
-  } else {
-    app.listen(PORT, '0.0.0.0');
-  }
 });
 
 

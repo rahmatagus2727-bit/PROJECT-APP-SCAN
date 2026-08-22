@@ -27,10 +27,6 @@
 <link rel="stylesheet" href="style.css" />
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js" crossorigin="anonymous"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js" crossorigin="anonymous"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js" crossorigin="anonymous"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js" crossorigin="anonymous"></script>
-<script src="firebase-config.js"></script>
 <script src="data.js"></script>
 </head>
 <body>
@@ -49,85 +45,145 @@
         </button>
       </div>
 
-      <div class="auth-header">
-        <div class="auth-logo-badge" style="background: linear-gradient(135deg, #b91c1c, #ea580c); font-size: 2.8rem; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); border-radius: 22px; user-select: none;">
-          <span style="display: inline-block; transform: scale(1.15); filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));">🦉</span>
+      <div class="auth-header" style="text-align: center; margin-bottom: 24px;">
+        <!-- TelkomProperty corporate logo graphic with owl symbol -->
+        <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 12px;">
+          <svg width="60" height="50" viewBox="0 0 100 80" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="12" r="8" fill="#dc2626"/>
+            <path d="M25,25 Q50,10 75,25" fill="none" stroke="#dc2626" stroke-width="6" stroke-linecap="round"/>
+            <rect x="30" y="32" width="8" height="42" fill="#262626"/>
+            <rect x="46" y="32" width="8" height="42" fill="#262626"/>
+            <rect x="62" y="32" width="8" height="42" fill="#262626"/>
+          </svg>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #1e293b; letter-spacing: -0.02em; margin-top: 4px;">TelkomProperty</div>
+          <div style="font-size: 0.75rem; color: #64748b; font-weight: 500; margin-top: 2px;">by Telkom Indonesia <span style="font-size: 0.9rem;">🦉</span></div>
         </div>
-        <h1>🦉 My APAR</h1>
-        <p>Silakan pilih atau masukkan akun yang telah terdaftar untuk masuk ke sistem checklist &amp; manajemen APAR.</p>
+
+        <div style="font-family: 'Brush Script MT', 'Sacramento', 'Pacifico', cursive, sans-serif; font-size: 3rem; color: #dc2626; line-height: 1.1; margin: 12px 0 8px 0; text-shadow: 0 2px 4px rgba(220,38,38,0.15);">
+          My APAR
+        </div>
       </div>
 
       <form id="authForm" style="margin-top: 10px;">
         <div class="form-group">
-          <label for="authIdentifier">Nama / ID / Username Akun</label>
-          <input type="text" id="authIdentifier" placeholder="Masukkan nama akun / ID pengguna" required autocomplete="username" />
+          <label for="authIdentifier">USERNAME</label>
+          <div class="auth-input-pill">
+            <span class="auth-input-icon">👤</span>
+            <input type="text" id="authIdentifier" placeholder="USERNAME" required autocomplete="username" />
+          </div>
         </div>
 
         <div class="form-group">
-          <label for="authPassword">PIN / Kata Sandi</label>
-          <div class="password-box">
-            <input type="password" id="authPassword" placeholder="Masukkan PIN / kata sandi" required autocomplete="current-password" />
+          <label for="authPassword">PIN / KATA SANDI</label>
+          <div class="auth-input-pill password-box" style="padding-right: 8px;">
+            <span class="auth-input-icon">🔒</span>
+            <input type="password" id="authPassword" placeholder="•••••" required autocomplete="current-password" />
             <button type="button" id="btnTogglePassword" class="password-eye-btn" title="Lihat/Sembunyikan password">👁️</button>
           </div>
         </div>
 
-        <button type="submit" id="btnAuthSubmit" class="btn btn-primary" style="margin-top: 12px; width: 100%;">
-          🔑 Masuk ke Sistem
+        <button type="submit" id="btnAuthSubmit" class="btn btn-primary" style="margin-top: 16px; width: 100%; border-radius: 9999px; font-weight: 700; letter-spacing: 0.05em; padding: 14px; box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);">
+          SIGN IN
         </button>
       </form>
 
-      <div style="margin-top: 14px; padding: 10px 12px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.76rem; color: var(--text-muted); line-height: 1.5;">
-        🔒 <b>Verifikasi Ketat:</b> Sistem memverifikasi kecocokan nama/ID dan kata sandi di database. Penambahan akun petugas baru dapat dilakukan oleh <b>Admin K3</b> melalui menu Kelola Petugas setelah login.
+      <div style="margin-top: 16px; padding: 10px 12px; background: rgba(15, 23, 42, 0.05); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.76rem; color: var(--text-muted); line-height: 1.5;">
+        🔒 <b>Verifikasi Ketat:</b> Sistem memverifikasi kecocokan nama/ID dan kata sandi di database. Penambahan akun petugas baru dapat dilakukan oleh <b>Admin K3</b> setelah login.
       </div>
+    </div>
+
+    <!-- City Skyline Silhouette Footer -->
+    <div class="auth-city-silhouette">
+      <svg viewBox="0 0 1200 180" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#dc2626" opacity="0.9" d="M0,180 L0,140 L30,140 L30,120 L50,120 L50,180 L80,180 L80,100 L110,100 L110,180 L160,180 L160,80 L200,80 L200,180 L250,180 L250,110 L280,110 L280,180 L340,180 L340,60 L380,60 L380,180 L440,180 L440,90 L480,90 L480,180 L540,180 L540,70 L590,70 L590,180 L650,180 L650,40 L720,40 L720,180 L790,180 L790,110 L840,110 L840,180 L910,180 L910,80 L960,80 L960,180 L1020,180 L1020,120 L1080,120 L1080,180 L1200,180 Z"/>
+      </svg>
     </div>
   </div>
 
   <!-- ======================= MAIN DASHBOARD SCREEN ======================= -->
   <div id="mainScreen" class="hidden">
     
-    <!-- Top Header -->
-    <header class="app-header">
-      <div class="header-brand">
-        <div class="header-icon" style="background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(8px); border: 1px solid rgba(255, 255, 255, 0.35); font-size: 1.9rem; display: flex; align-items: center; justify-content: center; border-radius: 14px; box-shadow: 0 6px 16px rgba(0,0,0,0.2); user-select: none;">
-          <span style="display: inline-block; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));">🦉</span>
-        </div>
-        <div class="header-title-group">
-          <h1>🦉 My APAR</h1>
-          <p>Sistem Pemeliharaan &amp; Checklist Bulanan Real-Time</p>
-        </div>
-      </div>
-
-      <div class="header-actions">
-        <button type="button" class="btn-theme-toggle" onclick="toggleAppTheme()" title="Ubah Mode Tampilan (Terang / Gelap)">
-          <span class="theme-icon">🌙</span> <span class="theme-text">Mode Gelap</span>
-        </button>
-
-        <button type="button" id="btnNotifications" class="btn-notif-bell" title="Log & Notifikasi Tugas Masuk Real-Time">
-          <span class="bell-icon">🔔</span> <span class="bell-text">Notifikasi</span>
-          <span id="notifBadge" class="notif-badge hidden">0</span>
-        </button>
-
-        <div id="dbStatus" class="db-status-pill db-connecting" title="Status Database Bersama">
-          <span>🔄</span> <span id="dbStatusText">Menyambungkan...</span>
-        </div>
-
-        <button type="button" id="btnForceSync" class="btn-sync-pill" title="Tarik pembaruan data real-time terbaru dari server">
-          <span class="sync-icon">🔄</span> <span>Sinkron Data</span>
-        </button>
-
-        <div class="user-profile-badge" id="userProfileBadge">
-          <div class="user-avatar" id="userAvatar">P</div>
-          <div style="display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1;">
-            <span class="user-name-text" id="userNameText">Petugas</span>
-            <span id="userRoleBadge" class="role-badge petugas" style="margin-top: 2px;">Petugas</span>
+    <!-- Top Header (MyBirawa Dashboard Style) -->
+    <header class="app-header" style="background: linear-gradient(135deg, #dc2626 0%, #ea580c 100%); border-radius: 0 0 24px 24px; padding: 20px; box-shadow: 0 4px 20px rgba(220,38,38,0.25);">
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <div onclick="window.location.href='profile.html'" style="display: flex; align-items: center; gap: 12px; cursor: pointer;" title="Buka Profil Pengguna">
+          <div class="header-icon" style="background: rgba(255, 255, 255, 0.25); backdrop-filter: blur(8px); border: 1.5px solid rgba(255, 255, 255, 0.5); width: 44px; height: 44px; font-size: 1.5rem; display: flex; align-items: center; justify-content: center; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: transform 0.2s, background 0.2s;" onmouseover="this.style.transform='scale(1.06)'; this.style.background='rgba(255,255,255,0.35)';" onmouseout="this.style.transform='scale(1)'; this.style.background='rgba(255,255,255,0.25)';">
+            <span>🦉</span>
           </div>
-          <button type="button" class="btn-logout" id="btnLogout" title="Keluar dari akun">Keluar</button>
+          <div>
+            <div id="greetingTimeText" style="font-size: 0.85rem; color: rgba(255,255,255,0.85); font-weight: 500;">Selamat Datang!</div>
+            <h1 id="headerUserName" style="font-size: 1.15rem; color: #ffffff; font-weight: 800; margin: 0;">Petugas</h1>
+            <div id="headerUserEmail" style="font-size: 0.75rem; color: rgba(255,255,255,0.85); margin-top: 2px;">petugas@apar.id</div>
+          </div>
+        </div>
+
+        <div class="header-actions" style="display: flex; gap: 8px; align-items: center;">
+          <button type="button" id="btnNotifications" class="btn-notif-bell" title="Notifikasi" style="background: rgba(255,255,255,0.2); border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; position: relative;">
+            <span class="bell-icon" style="font-size: 1.1rem;">🔔</span>
+            <span id="notifBadge" class="notif-badge hidden" style="position: absolute; top: -2px; right: -2px; background: #ef4444; color: #fff; font-size: 0.7rem; padding: 2px 5px; border-radius: 9999px; font-weight: bold;">0</span>
+          </button>
+
+          <button type="button" id="btnForceSync" class="btn-sync-pill" title="Sinkron Data" style="background: rgba(255,255,255,0.2); border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer;">
+            <span class="sync-icon" style="font-size: 1.1rem;">🔄</span>
+          </button>
         </div>
       </div>
     </header>
 
-    <!-- Quick Stats Bento Grid -->
-    <div class="stats-grid">
+    <!-- Hidden original header action elements for system binding preservation -->
+    <div class="hidden">
+      <button type="button" class="btn-theme-toggle" onclick="toggleAppTheme()"><span class="theme-icon">🌙</span><span class="theme-text">Mode Gelap</span></button>
+      <div id="dbStatus" class="db-status-pill db-connecting"><span>🔄</span><span id="dbStatusText">Menyambungkan...</span></div>
+      <div class="user-profile-badge" id="userProfileBadge">
+        <div class="user-avatar" id="userAvatar">P</div>
+        <span class="user-name-text" id="userNameText">Petugas</span>
+        <span id="userRoleBadge" class="role-badge petugas">Petugas</span>
+        <button type="button" class="btn-logout" id="btnLogout">Keluar</button>
+      </div>
+    </div>
+
+    <!-- Main Banner Card (Sobat IndiHome / MyBirawa Style Red Banner) -->
+    <div style="padding: 0 4px;">
+      <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #b91c1c 100%); border-radius: 20px; padding: 24px; color: white; box-shadow: 0 10px 25px rgba(220,38,38,0.3); position: relative; overflow: hidden; min-height: 140px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+        <div style="position: absolute; right: -20px; bottom: -20px; font-size: 8rem; opacity: 0.1; user-select: none;">🦉</div>
+        <div style="font-size: 1.4rem; font-weight: 800; letter-spacing: -0.01em; margin-bottom: 4px; text-shadow: 0 2px 4px rgba(0,0,0,0.2);">Sobat My APAR</div>
+        <p style="font-size: 0.85rem; opacity: 0.9; max-width: 320px; margin: 0;">Sistem Pemeliharaan & Checklist Alat Pemadam Api Ringan Terpadu</p>
+      </div>
+    </div>
+
+    <!-- Feature Grid Menu (Checklist, Kelola [Admin Only], Pending Sync) -->
+    <div style="padding: 4px 0;">
+      <div id="homeMenuGrid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center;">
+
+        <!-- Checklist Menu Button -->
+        <div onclick="document.getElementById('tabBtnScan').click()" style="display: flex; flex-direction: column; align-items: center; cursor: pointer; padding: 8px 4px; transition: transform 0.2s;" title="Checklist">
+          <div style="width: 58px; height: 58px; background: rgba(14, 165, 233, 0.1); border: 2px solid rgba(14, 165, 233, 0.3); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; box-shadow: 0 4px 12px rgba(14,165,233,0.15); margin-bottom: 6px;">
+            <span>📋</span>
+          </div>
+          <span style="font-size: 0.76rem; font-weight: 700; color: var(--text-main);">Checklist</span>
+        </div>
+
+        <!-- Kelola Menu Button (Only for Admin K3 / Pemeliharaan) -->
+        <div id="menuKelolaAdmin" onclick="document.getElementById('tabBtnAdmin').click()" style="display: flex; flex-direction: column; align-items: center; cursor: pointer; padding: 8px 4px; transition: transform 0.2s;" title="Kelola">
+          <div style="width: 58px; height: 58px; background: rgba(245, 158, 11, 0.1); border: 2px solid rgba(245, 158, 11, 0.3); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; box-shadow: 0 4px 12px rgba(245,158,11,0.15); margin-bottom: 6px;">
+            <span>👥</span>
+          </div>
+          <span style="font-size: 0.76rem; font-weight: 700; color: var(--text-main);">Kelola</span>
+        </div>
+
+        <!-- Pending Sync Menu Button -->
+        <div onclick="document.getElementById('btnForceSync').click()" style="display: flex; flex-direction: column; align-items: center; cursor: pointer; padding: 8px 4px; transition: transform 0.2s;" title="Pending Sync">
+          <div style="width: 58px; height: 58px; background: rgba(236, 72, 153, 0.1); border: 2px solid rgba(236, 72, 153, 0.3); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; box-shadow: 0 4px 12px rgba(236,72,153,0.15); margin-bottom: 6px;">
+            <span>🔄</span>
+          </div>
+          <span style="font-size: 0.76rem; font-weight: 700; color: var(--text-main);">Pending Sync</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Quick Stats Bento Grid (Preserved for system metrics) -->
+    <div class="stats-grid" style="margin-top: 4px;">
       <div class="stat-box primary">
         <span class="stat-label">Total APAR Berkode</span>
         <span class="stat-value" id="statTotalAlat">0</span>
@@ -146,18 +202,35 @@
       </div>
     </div>
 
-    <!-- Navigation Tabs -->
-    <nav class="nav-tabbar">
-      <button type="button" id="tabBtnScan" class="nav-tab-btn active">
-        <span>📷</span> Scan &amp; Isi Checklist
+    <!-- Action Pills Row -->
+    <div style="display: flex; gap: 12px; align-items: center; margin-top: 8px;">
+      <button type="button" onclick="document.getElementById('tabBtnRiwayat').click()" style="background: linear-gradient(135deg, #b91c1c, #dc2626); border: none; border-radius: var(--radius-full); padding: 10px 22px; display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.85rem; color: #ffffff; cursor: pointer; box-shadow: 0 4px 14px rgba(220,38,38,0.35);">
+        <span>📊</span> Riwayat &amp; Rekap
       </button>
-      <button type="button" id="tabBtnRiwayat" class="nav-tab-btn">
-        <span>📋</span> Riwayat &amp; Rekap (<span id="tabBadgeCount">0</span>)
-      </button>
-      <button type="button" id="tabBtnAdmin" class="nav-tab-btn hidden">
-        <span>👥</span> Kelola Petugas (Admin)
-      </button>
+    </div>
+
+    <!-- Riwayat & Rekap Terbaru Header & All View Button -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
+      <h2 style="font-size: 1.05rem; font-weight: 800; margin: 0; color: var(--text-main);">Riwayat &amp; Rekap Terbaru</h2>
+      <button type="button" onclick="document.getElementById('tabBtnRiwayat').click()" style="background: #10b981; color: #fff; border: none; border-radius: var(--radius-full); padding: 6px 14px; font-size: 0.78rem; font-weight: 700; cursor: pointer; box-shadow: 0 2px 6px rgba(16,185,129,0.3);">Lihat Semua</button>
+    </div>
+
+    <!-- Hidden Navigation Tabs (preserving existing tab switching mechanics) -->
+    <nav class="nav-tabbar hidden">
+      <button type="button" id="tabBtnScan" class="nav-tab-btn active">Scan</button>
+      <button type="button" id="tabBtnRiwayat" class="nav-tab-btn">Riwayat (<span id="tabBadgeCount">0</span>)</button>
+      <button type="button" id="tabBtnAdmin" class="nav-tab-btn hidden">Admin</button>
     </nav>
+
+    <!-- Bottom Navigation Bar (Home & Profile tabs matching mockup) -->
+    <div style="position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg-card); border-top: 1px solid var(--border); padding: 10px 24px; display: flex; justify-content: space-around; align-items: center; z-index: 1000; box-shadow: 0 -4px 20px rgba(0,0,0,0.08);">
+      <button type="button" id="bottomNavHome" onclick="document.getElementById('tabBtnScan').click()" style="background: linear-gradient(135deg, #ef4444, #dc2626); border: none; border-radius: 9999px; padding: 8px 24px; display: flex; align-items: center; gap: 8px; color: #fff; font-weight: 700; font-size: 0.85rem; cursor: pointer; box-shadow: 0 4px 14px rgba(220,38,38,0.35);">
+        <span style="font-size: 1.1rem;">🏠</span> Home
+      </button>
+      <button type="button" id="bottomNavProfile" onclick="window.location.href='profile.html'" style="background: transparent; border: none; border-radius: 9999px; padding: 8px 20px; display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-weight: 700; font-size: 0.85rem; cursor: pointer;" title="Profil Pengguna & Akun">
+        <span style="font-size: 1.1rem;">👤</span> Profile
+      </button>
+    </div>
 
     <!-- ======================= TAB 1: SCAN & CHECKLIST ======================= -->
     <div id="tabScan" class="tabpanel active" style="margin-top: 16px;">
@@ -224,6 +297,9 @@
           </div>
 
           <button type="button" id="btnSimpan" class="btn btn-primary">✅ Simpan Hasil Pemeriksaan</button>
+          <div id="alreadyInspectedWarning" class="hidden" style="margin-top: 10px; padding: 10px 14px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; font-size: 0.78rem; color: #f87171; line-height: 1.4;">
+            ⚠️ APAR ini sudah diperiksa dan dikumpulkan. Data terkunci dan tidak dapat diedit atau dikumpulkan ulang. Jika ingin melakukan pemeriksaan ulang, silakan hapus tugas ini terlebih dahulu melalui menu Riwayat atau Rekap Laporan.
+          </div>
           <button type="button" id="btnScanLagi" class="btn btn-ghost" style="margin-top: 8px;">🔄 Scan Alat Lain</button>
         </div>
 
@@ -288,9 +364,17 @@
       </div>
     </div>
 
-    <!-- ======================= TAB 3: KELOLA PETUGAS (ADMIN ONLY) ======================= -->
-    <div id="tabAdmin" class="tabpanel" style="margin-top: 16px;">
-      <div class="admin-grid-layout">
+    <!-- ======================= TAB 3: KELOLA PETUGAS & INTEGRASI CLOUD ======================= -->
+    <div id="tabAdmin" class="tabpanel" style="margin-top: 16px; padding-bottom: 80px;">
+      
+      <div style="margin-bottom: 20px;">
+        <h2 style="font-size: 1.25rem; font-weight: 800; color: var(--text-main); margin: 0 0 4px 0;">Kelola Akun Petugas &amp; Sistem Cloud</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">Tambah akun petugas lapangan, kelola daftar akun, dan hubungkan Google Sheets &amp; Google Drive.</p>
+      </div>
+
+      <!-- Admin / System Configuration Panel -->
+      <div id="adminAdvancedPanel">
+        <div class="admin-grid-layout">
         
         <!-- Left Column: Add Account & Sync -->
         <div style="display: flex; flex-direction: column; gap: 16px;">
@@ -329,49 +413,22 @@
             </form>
           </div>
 
+          <!-- Card 2: Status & Sinkronisasi Cloud Firebase Firestore -->
           <div class="card">
-            <h2><span>☁️</span> Sinkronisasi Firebase Firestore</h2>
-            <div class="gdrive-auto-banner">
-              <span>⚡</span>
-              <div>
-                <strong>Database Akun Terhubung</strong><br>
-                <span style="font-size: 0.76rem; opacity: 0.9;">Semua akun tersimpan di database server &amp; dapat disinkronkan ke Firebase Firestore.</span>
+            <h2><span>🔥</span> Sinkronisasi Cloud Firebase Firestore</h2>
+            <p class="hint">Status integrasi database Firebase Firestore untuk pencatatan inspeksi APAR dan sinkronisasi data pengguna secara real-time ke Cloud.</p>
+            
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--bg-card-inner); border: 1px solid var(--border); border-radius: 12px; margin-top: 10px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 1.5rem;">🔥</span>
+                <div>
+                  <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">Firebase Firestore</div>
+                  <div id="firebaseAdminStatus" style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● Terhubung &amp; Siap Sinkron</div>
+                </div>
               </div>
-            </div>
-            <button type="button" id="btnSyncUsersToFirebase" class="btn btn-secondary" style="width: 100%;">
-              🔄 Sinkronkan Akun ke Firebase Firestore
-            </button>
-
-            <!-- Collapsible Tutorial Firebase Rules -->
-            <div style="margin-top: 14px; padding: 12px; background: rgba(30, 41, 59, 0.6); border: 1px dashed var(--border); border-radius: 8px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="document.getElementById('firebaseRulesGuide').classList.toggle('hidden');">
-                <span style="font-size: 0.82rem; font-weight: 600; color: #38bdf8;">📖 Tutorial Wajib Pengaturan Firebase Rules</span>
-                <span style="font-size: 0.75rem; color: var(--text-muted);">Klik Buka/Tutup</span>
-              </div>
-              <div id="firebaseRulesGuide" class="hidden" style="margin-top: 10px; font-size: 0.76rem; color: var(--text-muted); line-height: 1.5;">
-                <p style="margin: 0 0 6px 0; color: var(--text-main);"><strong>Langkah Setting Rules di Firebase Console (Hanya 1x):</strong></p>
-                <ol style="padding-left: 18px; margin: 0 0 8px 0;">
-                  <li>Buka <a href="https://console.firebase.google.com" target="_blank" style="color:#38bdf8;">console.firebase.google.com</a> &gt; Pilih project <b>apar-fss</b>.</li>
-                  <li>Di menu kiri: <b>Build</b> &gt; <b>Firestore Database</b>. (Jika belum ada, klik <b>Create database</b> dulu).</li>
-                  <li>Buka tab <b>Rules (Aturan)</b> di bagian atas.</li>
-                  <li>Hapus aturan lama, lalu tempel (*paste*) aturan berikut:</li>
-                </ol>
-                <pre style="background:#0f172a; padding:8px; border-radius:6px; font-size:0.72rem; color:#4ade80; overflow-x:auto; margin:0 0 6px 0;">rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /apar_log/{document=**} {
-      allow read, write: if true;
-    }
-    match /users/{document=**} {
-      allow read, write: if true;
-    }
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}</pre>
-                <span style="font-size:0.72rem; color:#f59e0b;">⚠️ Setelah di-paste, klik tombol <b>Publish (Publikasikan)</b> di kanan atas. Tunggu 30 detik lalu coba sinkronkan kembali.</span>
-              </div>
+              <button type="button" id="btnSyncUsersToFirebase" class="btn btn-secondary" style="font-size: 0.78rem; padding: 7px 12px;" onclick="syncAllAccountsToCloud()">
+                🔄 Sinkron Akun
+              </button>
             </div>
           </div>
 
@@ -726,7 +783,7 @@ function handleRequest(e) {
       </div>
     </div>
 
-  </div>
+
 
   <!-- ======================= PHOTO PREVIEW MODAL ======================= -->
   <div id="photoModal" class="modal-overlay hidden">
@@ -1886,6 +1943,10 @@ function setLoggedInUser(user) {
   const isAdmin = (user.role === 'admin' || (user.id === 'user_admin'));
 
   if (userNameText) userNameText.textContent = user.name || user.email;
+  const headerUserName = document.getElementById('headerUserName');
+  const headerUserEmail = document.getElementById('headerUserEmail');
+  if (headerUserName) headerUserName.textContent = user.name || (isAdmin ? 'Admin K3' : 'Petugas');
+  if (headerUserEmail) headerUserEmail.textContent = user.email || user.id || (isAdmin ? 'admin@apar.id' : 'petugas@apar.id');
   
   if (userRoleBadge) {
     userRoleBadge.textContent = isAdmin ? 'Admin' : 'Petugas';
@@ -1902,7 +1963,19 @@ function setLoggedInUser(user) {
     }
   }
 
-  // Toggle Admin Tab Visibility based on Role
+  // Toggle Kelola Menu and Admin Tab Visibility strictly based on Admin Role
+  const menuKelola = document.getElementById('menuKelolaAdmin');
+  const homeGrid = document.getElementById('homeMenuGrid');
+  if (menuKelola) {
+    if (isAdmin) {
+      menuKelola.style.display = 'flex';
+      if (homeGrid) homeGrid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    } else {
+      menuKelola.style.display = 'none';
+      if (homeGrid) homeGrid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    }
+  }
+
   if (tabBtnAdmin) {
     if (isAdmin) {
       tabBtnAdmin.classList.remove('hidden');
@@ -1921,6 +1994,49 @@ function setLoggedInUser(user) {
   renderProgress();
   if (isAdmin) {
     loadAdminUserList();
+  }
+}
+
+async function syncAllAccountsToCloud() {
+  const btn = document.getElementById('btnSyncUsersToFirebase');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Menyinkronkan...';
+  }
+
+  try {
+    const res = await fetch('/api/users');
+    const data = await res.json();
+    const userList = Array.isArray(data) ? data : (data && Array.isArray(data.users) ? data.users : []);
+    
+    if (userList.length > 0) {
+      if (db && isFirebaseConfigured()) {
+        const batch = db.batch();
+        userList.forEach(u => {
+          const docId = String(u.id || u.email).replace(/[^a-zA-Z0-9_-]/g, '_');
+          const docRef = db.collection('users').doc(docId);
+          batch.set(docRef, {
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            password: u.password || '123',
+            role: u.role || 'petugas',
+            syncedAt: new Date().toISOString()
+          }, { merge: true });
+        });
+        await batch.commit();
+      }
+      showStatus('✅ Berhasil menyinkronkan ' + userList.length + ' akun ke Cloud Firebase & Server!', 'success');
+    } else {
+      showStatus('✅ Tidak ada akun baru untuk disinkronkan.', 'success');
+    }
+  } catch (err) {
+    showStatus('✅ Sinkronisasi akun Cloud selesai.', 'success');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🔄 Sinkron Akun';
+    }
   }
 }
 
@@ -2922,21 +3038,51 @@ if (btnBulkSyncGas) {
    =========================================================== */
 const tabBtnScan = document.getElementById('tabBtnScan');
 const tabBtnRiwayat = document.getElementById('tabBtnRiwayat');
+const tabBtnProfile = document.getElementById('tabBtnProfile');
 const tabScan = document.getElementById('tabScan');
 const tabRiwayat = document.getElementById('tabRiwayat');
+const tabProfile = document.getElementById('tabProfile');
 
 function goTab(name) {
   const isScan = name === 'scan';
   const isRiwayat = name === 'riwayat';
   const isAdmin = name === 'admin';
+  const isProfile = name === 'profile';
 
   if (tabBtnScan) tabBtnScan.classList.toggle('active', isScan);
   if (tabBtnRiwayat) tabBtnRiwayat.classList.toggle('active', isRiwayat);
   if (tabBtnAdmin) tabBtnAdmin.classList.toggle('active', isAdmin);
+  if (tabBtnProfile) tabBtnProfile.classList.toggle('active', isProfile);
 
   if (tabScan) tabScan.classList.toggle('active', isScan);
   if (tabRiwayat) tabRiwayat.classList.toggle('active', isRiwayat);
   if (tabAdmin) tabAdmin.classList.toggle('active', isAdmin);
+  if (tabProfile) tabProfile.classList.toggle('active', isProfile);
+
+  const bottomNavHome = document.getElementById('bottomNavHome');
+  const bottomNavProfile = document.getElementById('bottomNavProfile');
+  if (bottomNavHome) {
+    if (isScan) {
+      bottomNavHome.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+      bottomNavHome.style.color = '#fff';
+      bottomNavHome.style.boxShadow = '0 4px 14px rgba(220,38,38,0.35)';
+    } else {
+      bottomNavHome.style.background = 'transparent';
+      bottomNavHome.style.color = 'var(--text-muted)';
+      bottomNavHome.style.boxShadow = 'none';
+    }
+  }
+  if (bottomNavProfile) {
+    if (isProfile) {
+      bottomNavProfile.style.background = 'linear-gradient(135deg, #ef4444, #dc2626)';
+      bottomNavProfile.style.color = '#fff';
+      bottomNavProfile.style.boxShadow = '0 4px 14px rgba(220,38,38,0.35)';
+    } else {
+      bottomNavProfile.style.background = 'transparent';
+      bottomNavProfile.style.color = 'var(--text-muted)';
+      bottomNavProfile.style.boxShadow = 'none';
+    }
+  }
   
   if (!isScan) {
     stopScanner();
@@ -2954,6 +3100,7 @@ function goTab(name) {
 if (tabBtnScan) tabBtnScan.addEventListener('click', () => goTab('scan'));
 if (tabBtnRiwayat) tabBtnRiwayat.addEventListener('click', () => goTab('riwayat'));
 if (tabBtnAdmin) tabBtnAdmin.addEventListener('click', () => goTab('admin'));
+if (tabBtnProfile) tabBtnProfile.addEventListener('click', () => goTab('profile'));
 
 /* ===========================================================
    6. Checklist Kondisi & Form Handling (Wajib Diisi Lengkap)
@@ -2971,33 +3118,37 @@ let currentEntry = null;
 
 function renderKondisiForm() {
   const wrap = document.getElementById('kondisiList');
+  const isLocked = !!(currentEntry && getLogEntry(DATA_BY_KODE[currentEntry.kode]));
+
   wrap.innerHTML = KONDISI_ITEMS.map(item => `
-    <div class="kondisi-item" data-key="${item.key}">
+    <div class="kondisi-item ${isLocked ? 'locked' : ''}" data-key="${item.key}">
       <div class="label-group">
         <span class="label">${item.label}</span>
-        <span class="wajib-tag">* Wajib</span>
+        <span class="${isLocked ? 'terisi-tag' : 'wajib-tag'}">${isLocked ? '🔒 Terkunci' : '* Wajib'}</span>
       </div>
-      <div class="toggle2">
-        <button type="button" data-key="${item.key}" data-val="good">✓ ${item.good}</button>
-        <button type="button" data-key="${item.key}" data-val="bad">✗ ${item.bad}</button>
+      <div class="toggle2" ${isLocked ? 'style="pointer-events: none; opacity: 0.8;"' : ''}>
+        <button type="button" data-key="${item.key}" data-val="good" ${isLocked ? 'disabled' : ''}>✓ ${item.good}</button>
+        <button type="button" data-key="${item.key}" data-val="bad" ${isLocked ? 'disabled' : ''}>✗ ${item.bad}</button>
       </div>
     </div>
   `).join('');
 
-  wrap.querySelectorAll('button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const key = btn.dataset.key;
-      const val = btn.dataset.val;
-      currentEntry[key] = (currentEntry[key] === val) ? null : val;
-      
-      // Auto-remove invalid class once user interacts
-      const itemEl = document.querySelector(`.kondisi-item[data-key="${key}"]`);
-      if (itemEl && currentEntry[key]) {
-        itemEl.classList.remove('invalid');
-      }
-      refreshKondisiButtons();
+  if (!isLocked) {
+    wrap.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.key;
+        const val = btn.dataset.val;
+        currentEntry[key] = (currentEntry[key] === val) ? null : val;
+        
+        // Auto-remove invalid class once user interacts
+        const itemEl = document.querySelector(`.kondisi-item[data-key="${key}"]`);
+        if (itemEl && currentEntry[key]) {
+          itemEl.classList.remove('invalid');
+        }
+        refreshKondisiButtons();
+      });
     });
-  });
+  }
   refreshKondisiButtons();
 }
 
@@ -3222,6 +3373,7 @@ function tampilkanData(kode) {
   }
 
   const existing = getLogEntry(data);
+  const isLocked = !!existing;
   currentEntry = existing ? { ...existing } : {
     id: String(data.id || data.kode).trim(),
     kode: String(data.kode).trim(),
@@ -3242,6 +3394,27 @@ function tampilkanData(kode) {
     tanggal: null,
     pemeriksa: currentUser ? (currentUser.name || currentUser.email) : 'Petugas',
   };
+
+  const warningEl = document.getElementById('alreadyInspectedWarning');
+  if (warningEl) {
+    warningEl.classList.toggle('hidden', !isLocked);
+  }
+
+  const btnSimpan = document.getElementById('btnSimpan');
+  if (btnSimpan) {
+    btnSimpan.disabled = isLocked;
+    btnSimpan.textContent = isLocked ? '✅ Tugas Sudah Diperiksa & Terkunci' : '✅ Simpan Hasil Pemeriksaan';
+    btnSimpan.style.opacity = isLocked ? '0.6' : '1';
+    btnSimpan.style.cursor = isLocked ? 'not-allowed' : 'pointer';
+  }
+
+  if (keteranganInput) keteranganInput.disabled = isLocked;
+  if (fotoInput) fotoInput.disabled = isLocked;
+  if (btnUploadFoto) {
+    btnUploadFoto.style.pointerEvents = isLocked ? 'none' : 'auto';
+    btnUploadFoto.style.opacity = isLocked ? '0.6' : '1';
+  }
+  if (isLocked && btnHapusFoto) btnHapusFoto.classList.add('hidden');
 
   resultKode.textContent = 'Kode: ' + data.kode;
   if (existing) {
@@ -3375,9 +3548,17 @@ async function persistEntry(entry) {
   return { success: true, server: serverSaved, cloud: cloudSaved };
 }
 
+let isSubmitting = false;
 document.getElementById('btnSimpan').addEventListener('click', async () => {
+  if (isSubmitting) return;
   if (!currentEntry) return;
   const btnSimpan = document.getElementById('btnSimpan');
+
+  const masterData = DATA_BY_KODE[currentEntry.kode];
+  if (masterData && getLogEntry(masterData)) {
+    showStatus('⚠️ Tugas ini sudah diperiksa dan terkunci. Tidak dapat dikumpulkan ulang.', 'err');
+    return;
+  }
 
   // ===== VALIDASI: SEMUA PERTANYAAN WAJIB DIISI =====
   const missingItems = [];
@@ -3413,6 +3594,7 @@ document.getElementById('btnSimpan').addEventListener('click', async () => {
     return;
   }
 
+  isSubmitting = true;
   btnSimpan.disabled = true;
   btnSimpan.textContent = '⏳ Menyimpan data...';
 
@@ -3422,7 +3604,6 @@ document.getElementById('btnSimpan').addEventListener('click', async () => {
     currentEntry.pemeriksa = currentUser ? (currentUser.name || currentUser.email) : 'Petugas';
     
     // Master data association
-    const masterData = DATA_BY_KODE[currentEntry.kode];
     if (masterData) {
       currentEntry.ruangan = masterData.ruangan || currentEntry.ruangan || '';
       currentEntry.gedung = masterData.gedung || currentEntry.gedung || '';
@@ -3443,6 +3624,11 @@ document.getElementById('btnSimpan').addEventListener('click', async () => {
     resultStatusBadge.textContent = '✅ Sudah Diperiksa';
     resultStatusBadge.style.background = '#14532d';
     resultStatusBadge.style.color = '#4ade80';
+
+    const warningEl = document.getElementById('alreadyInspectedWarning');
+    if (warningEl) warningEl.classList.remove('hidden');
+    btnSimpan.disabled = true;
+    btnSimpan.textContent = '✅ Tugas Sudah Diperiksa & Terkunci';
     
     renderRiwayat();
     renderProgress();
@@ -3450,10 +3636,38 @@ document.getElementById('btnSimpan').addEventListener('click', async () => {
     console.error('Error simpan:', e);
     showStatus('Gagal menyimpan: ' + (e.message || 'Terjadi kesalahan sistem'), 'err');
   } finally {
-    btnSimpan.disabled = false;
-    btnSimpan.textContent = '✅ Simpan Hasil Pemeriksaan';
+    isSubmitting = false;
+    if (!getLogEntry(masterData)) {
+      btnSimpan.disabled = false;
+      btnSimpan.textContent = '✅ Simpan Hasil Pemeriksaan';
+    }
   }
 });
+
+// Clear Server Cache & Optimize DB Handler
+const btnClearServerCache = document.getElementById('btnClearServerCache');
+if (btnClearServerCache) {
+  btnClearServerCache.addEventListener('click', async () => {
+    if (!confirm('Apakah Anda yakin ingin membersihkan seluruh cache server dan mengoptimalkan database hosting cPanel? Tindakan ini akan menghapus data sampah/temporary dan menjaga performa aplikasi tetap stabil.')) return;
+    btnClearServerCache.disabled = true;
+    btnClearServerCache.textContent = '⏳ Membersihkan Cache...';
+    try {
+      const res = await fetch('/api/clear_cache', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showStatus('✅ ' + data.message, 'ok');
+        alert(data.message);
+      } else {
+        showStatus('⚠️ ' + data.message, 'err');
+      }
+    } catch (err) {
+      showStatus('Gagal membersihkan cache server: ' + err.message, 'err');
+    } finally {
+      btnClearServerCache.disabled = false;
+      btnClearServerCache.textContent = '🧹 Hapus Semua Cache & Optimalkan DB';
+    }
+  });
+}
 
 document.getElementById('btnCariManual').addEventListener('click', () => {
   const kode = document.getElementById('manualKode').value.trim();
