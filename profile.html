@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Profil Pengguna - Sobat My APAR</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
   <script>
     (function() {
       try {
@@ -252,6 +255,23 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+
+        // Also sync directly to Firebase Firestore if initialized
+        try {
+          if (typeof firebase !== 'undefined' && typeof firebaseConfig !== 'undefined' && firebaseConfig.apiKey) {
+            if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+            const db = firebase.firestore();
+            const docId = String(currentUser ? (currentUser.id || currentUser.email) : 'petugas').replace(/[^a-zA-Z0-9_-]/g, '_');
+            await db.collection('users').doc(docId).set({
+              id: currentUser ? currentUser.id : '',
+              email: currentUser ? currentUser.email : '',
+              password: newPass,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+          }
+        } catch (fbErr) {
+          console.warn('Firebase password sync notice:', fbErr);
+        }
 
         const data = await res.json();
         if (data.success) {
