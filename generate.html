@@ -5,8 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
 <title>Generate QR &amp; Barcode APAR (1 - 128)</title>
 <link rel="stylesheet" href="style.css" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<script>
+  (function() {
+    window.onerror = function(msg) {
+      if (!msg || msg === 'Script error.' || String(msg).includes('Script error')) return true;
+      return false;
+    };
+    window.addEventListener('error', function(event) {
+      if (event && (event.message === 'Script error.' || !event.message)) {
+        event.preventDefault();
+      }
+    }, true);
+  })();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js" crossorigin="anonymous"></script>
 <script src="data.js"></script>
 <style>
   .gen-header-actions {

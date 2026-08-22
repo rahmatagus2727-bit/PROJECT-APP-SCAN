@@ -5,17 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Profil Pengguna - Sobat My APAR</title>
   <link rel="stylesheet" href="style.css">
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-  <script src="firebase-config.js"></script>
   <script>
     (function() {
       try {
         var savedTheme = localStorage.getItem('apar_theme') || 'light';
         document.documentElement.setAttribute('data-theme', savedTheme);
       } catch(e) {}
+
+      window.onerror = function(msg) {
+        if (!msg || msg === 'Script error.' || String(msg).includes('Script error')) return true;
+        return false;
+      };
+      window.addEventListener('error', function(event) {
+        if (event && (event.message === 'Script error.' || !event.message)) {
+          event.preventDefault();
+        }
+      }, true);
     })();
   </script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js" crossorigin="anonymous"></script>
+  <script src="firebase-config.js"></script>
 </head>
 <body class="min-h-screen flex flex-col justify-between pb-24">
 

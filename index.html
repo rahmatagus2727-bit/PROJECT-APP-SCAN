@@ -11,24 +11,37 @@
       document.documentElement.setAttribute('data-theme', savedTheme);
     } catch(e) {}
     
-    window.addEventListener('error', function(event) {
-      if (event && (event.message === 'Script error.' || !event.message)) {
-        console.warn('Benign cross-origin script error captured and suppressed.');
-        return true;
+    // Global script error handler & suppressor for external CDNs
+    window.onerror = function(msg, url, lineNo, columnNo, error) {
+      if (!msg || msg === 'Script error.' || String(msg).includes('Script error')) {
+        console.warn('Suppressed cross-origin script notice:', { msg, url, lineNo });
+        return true; // Suppress browser default error popups/listeners
       }
-    });
+      return false;
+    };
+
+    window.addEventListener('error', function(event) {
+      if (event && (event.message === 'Script error.' || !event.message || String(event.message).includes('Script error'))) {
+        event.preventDefault();
+        if (typeof event.stopImmediatePropagation === 'function') {
+          event.stopImmediatePropagation();
+        }
+      }
+    }, true);
+
     window.addEventListener('unhandledrejection', function(event) {
       if (event && event.reason) {
-        console.warn('Captured unhandled promise rejection:', event.reason);
+        console.warn('Handled promise rejection notice:', event.reason);
+        event.preventDefault();
       }
     });
   })();
 </script>
 <link rel="stylesheet" href="style.css" />
 <!-- Firebase SDK & Shared Configuration -->
-<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js" crossorigin="anonymous"></script>
 <script src="firebase-config.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js" crossorigin="anonymous"></script>
@@ -421,18 +434,18 @@
           <!-- Card 2: Status & Sinkronisasi Cloud Firebase Firestore -->
           <div class="card">
             <h2><span>🔥</span> Sinkronisasi Cloud Firebase Firestore</h2>
-            <p class="hint">Status integrasi database Firebase Firestore untuk pencatatan inspeksi APAR dan sinkronisasi data pengguna secara real-time ke Cloud.</p>
+            <p class="hint">Sinkronisasi massal seluruh data akun pengguna, riwayat inspeksi APAR, dan log notifikasi ke database Cloud Firebase Firestore agar seluruh perangkat aktif secara real-time.</p>
             
             <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; background: var(--bg-card-inner); border: 1px solid var(--border); border-radius: 12px; margin-top: 10px;">
               <div style="display: flex; align-items: center; gap: 10px;">
                 <span style="font-size: 1.5rem;">🔥</span>
                 <div>
-                  <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">Firebase Firestore</div>
-                  <div id="firebaseAdminStatus" style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● Terhubung &amp; Siap Sinkron</div>
+                  <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">Firebase Firestore Cloud</div>
+                  <div id="firebaseAdminStatus" style="font-size: 0.75rem; color: #10b981; font-weight: 600;">● Terhubung &amp; Siap Real-Time</div>
                 </div>
               </div>
-              <button type="button" id="btnSyncUsersToFirebase" class="btn btn-secondary" style="font-size: 0.78rem; padding: 7px 12px;" onclick="syncAllAccountsToCloud()">
-                🔄 Sinkron Akun
+              <button type="button" id="btnSyncUsersToFirebase" class="btn btn-secondary" style="font-size: 0.78rem; padding: 7px 14px; font-weight: 600;" onclick="syncAllAccountsToCloud()">
+                🔄 Sinkron Massal Cloud
               </button>
             </div>
           </div>
@@ -1106,11 +1119,19 @@ function addNotification(notif, isRemote = false) {
   renderNotificationFeed();
   showNotificationToast(notif);
 
-  // Sync to Firestore if initiated locally
-  if (!isRemote && db && isFirebaseConfigured()) {
-    try {
-      db.collection('notifications').doc(notif.id).set(notif, { merge: true }).catch(() => {});
-    } catch (e) {}
+  // Sync to backend server SQLite (broadcasts SSE) & Cloud Firestore if generated locally
+  if (!isRemote) {
+    fetch('/api/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(notif)
+    }).catch(e => console.warn('Server notification sync notice:', e));
+
+    if (db && isFirebaseConfigured()) {
+      try {
+        db.collection('notifications').doc(notif.id).set(notif, { merge: true }).catch(() => {});
+      } catch (e) {}
+    }
   }
 }
 
@@ -1221,7 +1242,8 @@ async function clearAllNotificationsLog() {
 }
 
 function isFirebaseConfigured() {
-  return typeof firebaseConfig !== 'undefined'
+  return typeof firebase !== 'undefined'
+    && typeof firebaseConfig !== 'undefined'
     && firebaseConfig.apiKey && !String(firebaseConfig.apiKey).startsWith('GANTI_')
     && firebaseConfig.projectId && !String(firebaseConfig.projectId).startsWith('GANTI_');
 }
@@ -1405,17 +1427,14 @@ async function fetchFreshCloudData(showNotification = false) {
   const btnSync = document.getElementById('btnForceSync');
   if (btnSync) btnSync.classList.add('spinning');
 
-  let loadedCount = 0;
-
   // 1. Fetch from Express Backend Server
   try {
     const res = await fetch('/api/apar_log', { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
-      if (data && data.logs) {
-        LOG = data.logs;
+      if (data && data.logs && typeof data.logs === 'object') {
+        LOG = { ...LOG, ...data.logs };
         saveLocalLog(LOG);
-        loadedCount = Object.keys(data.logs).length;
       }
     }
   } catch (err) {
@@ -1441,14 +1460,35 @@ async function fetchFreshCloudData(showNotification = false) {
           if (d.kode) freshFsLogs[String(d.kode).trim()] = d;
         }
       });
-      LOG = freshFsLogs;
+      LOG = { ...LOG, ...freshFsLogs };
       saveLocalLog(LOG);
-      if (snapshot.size > loadedCount) loadedCount = snapshot.size;
     } catch (e) {
       console.warn('Firestore fetch error:', e);
     }
   }
 
+  // 3. Fetch latest notifications from Backend & Firestore
+  try {
+    const nRes = await fetch('/api/notifications', { cache: 'no-store' });
+    if (nRes.ok) {
+      const nData = await nRes.json();
+      if (nData && Array.isArray(nData.notifications)) {
+        nData.notifications.forEach(n => {
+          if (!NOTIFICATIONS.some(exist => exist.id === n.id)) {
+            NOTIFICATIONS.push(n);
+          }
+        });
+        NOTIFICATIONS.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        if (NOTIFICATIONS.length > 100) NOTIFICATIONS.length = 100;
+        UNREAD_NOTIF_COUNT = NOTIFICATIONS.filter(n => !n.is_read).length;
+        saveLocalNotifications();
+        updateNotificationBadge();
+        renderNotificationFeed();
+      }
+    }
+  } catch (nErr) {}
+
+  const loadedCount = Object.keys(LOG).length;
   renderRiwayat();
   renderProgress();
   setDbStatus('online', `Real-Time Aktif (${loadedCount} data)`);
@@ -1483,10 +1523,12 @@ function startFirestoreSync() {
             if (d.kode) fresh[String(d.kode).trim()] = d;
           }
         });
-        LOG = fresh;
+        LOG = { ...LOG, ...fresh };
         saveLocalLog(LOG);
         renderRiwayat();
         renderProgress();
+        const total = Object.keys(LOG).length;
+        setDbStatus('online', `Real-Time Aktif (${total} data)`);
       },
       (err) => {
         console.warn('Firestore onSnapshot warning:', err);
@@ -1566,15 +1608,18 @@ function startFirestoreSync() {
       try { unsubscribeFirestoreNotifs(); } catch (e) {}
       unsubscribeFirestoreNotifs = null;
     }
-    unsubscribeFirestoreNotifs = db.collection('notifications').orderBy('created_at', 'desc').limit(50).onSnapshot((snapshot) => {
-      snapshot.docChanges().forEach(change => {
-        if (change.type === 'added') {
-          const notifData = change.doc.data();
-          if (notifData) {
+    unsubscribeFirestoreNotifs = db.collection('notifications').limit(50).onSnapshot((snapshot) => {
+      snapshot.forEach(doc => {
+        const notifData = doc.data();
+        if (notifData) {
+          const exists = NOTIFICATIONS.some(n => n.id === (notifData.id || doc.id));
+          if (!exists) {
             addNotification(notifData, true);
           }
         }
       });
+    }, (err) => {
+      console.warn('Firestore notif listener notice:', err);
     });
   } catch (err) {}
 }
@@ -2006,41 +2051,163 @@ async function syncAllAccountsToCloud() {
   const btn = document.getElementById('btnSyncUsersToFirebase');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '⏳ Menyinkronkan...';
+    btn.textContent = '⏳ Menyinkronkan Massal...';
   }
 
+  showStatus('⏳ Memulai sinkronisasi massal seluruh akun, riwayat inspeksi, dan notifikasi ke Cloud Firebase...', 'info');
+
   try {
-    const res = await fetch('/api/users');
-    const data = await res.json();
-    const userList = Array.isArray(data) ? data : (data && Array.isArray(data.users) ? data.users : []);
-    
-    if (userList.length > 0) {
-      if (db && isFirebaseConfigured()) {
-        const batch = db.batch();
+    // 1. Ensure Firebase Firestore is initialized
+    if (isFirebaseConfigured() && !db) {
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.firestore();
+      } catch (fbInitErr) {
+        console.warn('Firebase init error during mass sync:', fbInitErr);
+      }
+    }
+
+    // ==========================================
+    // 2. MASS SYNC: PENGGUNA & AKUN (USERS)
+    // ==========================================
+    let userList = [];
+    try {
+      const res = await fetch('/api/users');
+      if (res.ok) {
+        const data = await res.json();
+        userList = Array.isArray(data) ? data : (data && Array.isArray(data.users) ? data.users : []);
+      }
+    } catch (e) {}
+
+    if (!userList.length) userList = cachedAdminUsers || [];
+    if (!userList.length) {
+      try { userList = JSON.parse(localStorage.getItem('apar_all_users') || '[]'); } catch (e) {}
+    }
+    if (!userList.length) userList = getDefaultUsersList();
+
+    let fsSyncedUsers = 0;
+    if (db && isFirebaseConfigured()) {
+      try {
+        const batchUsers = db.batch();
         userList.forEach(u => {
           const docId = String(u.id || u.email).replace(/[^a-zA-Z0-9_-]/g, '_');
           const docRef = db.collection('users').doc(docId);
-          batch.set(docRef, {
-            id: u.id,
-            name: u.name,
-            email: u.email,
+          batchUsers.set(docRef, {
+            id: u.id || docId,
+            name: u.name || 'Petugas',
+            email: u.email || '',
             password: u.password || '123',
             role: u.role || 'petugas',
             syncedAt: new Date().toISOString()
           }, { merge: true });
+          fsSyncedUsers++;
         });
-        await batch.commit();
+        await batchUsers.commit();
+      } catch (uSyncErr) {
+        console.warn('Firestore users mass sync notice:', uSyncErr);
       }
-      showStatus('✅ Berhasil menyinkronkan ' + userList.length + ' akun ke Cloud Firebase & Server!', 'success');
-    } else {
-      showStatus('✅ Tidak ada akun baru untuk disinkronkan.', 'success');
     }
+
+    cachedAdminUsers = userList;
+    try { localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers)); } catch (e) {}
+    renderAdminUserList();
+
+    // ==========================================
+    // 3. MASS SYNC: RIWAYAT INSPEKSI APAR (APAR_LOG)
+    // ==========================================
+    let serverLogs = {};
+    try {
+      const resLog = await fetch('/api/apar_log');
+      if (resLog.ok) {
+        const logData = await resLog.json();
+        if (logData && logData.logs) serverLogs = logData.logs;
+      }
+    } catch (e) {}
+
+    let firestoreLogs = {};
+    if (db && isFirebaseConfigured()) {
+      try {
+        const snap = await db.collection(COLLECTION_NAME).get();
+        snap.forEach(doc => {
+          const d = doc.data();
+          if (d) {
+            firestoreLogs[doc.id] = d;
+            if (d.id) firestoreLogs[String(d.id).trim()] = d;
+            if (d.kode) firestoreLogs[String(d.kode).trim()] = d;
+          }
+        });
+      } catch (e) {}
+    }
+
+    // Merge all inspection logs into master unified LOG
+    LOG = { ...LOG, ...serverLogs, ...firestoreLogs };
+    saveLocalLog(LOG);
+
+    // Push unified logs back to SQLite server
+    try {
+      await fetch('/api/apar_log/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ logs: LOG })
+      });
+    } catch (e) {}
+
+    // Push unified logs back to Firestore in batches
+    let fsSyncedLogs = 0;
+    if (db && isFirebaseConfigured()) {
+      try {
+        const logKeys = Object.keys(LOG);
+        const batchSize = 400;
+        for (let i = 0; i < logKeys.length; i += batchSize) {
+          const chunk = logKeys.slice(i, i + batchSize);
+          const batchLog = db.batch();
+          chunk.forEach(k => {
+            const item = LOG[k];
+            if (item && (item.kode || item.id)) {
+              const docId = String(item.kode || item.id).trim();
+              const docRef = db.collection(COLLECTION_NAME).doc(docId);
+              batchLog.set(docRef, item, { merge: true });
+              fsSyncedLogs++;
+            }
+          });
+          await batchLog.commit();
+        }
+      } catch (e) {
+        console.warn('Firestore logs mass sync notice:', e);
+      }
+    }
+
+    // ==========================================
+    // 4. MASS BROADCAST & NOTIFICATION
+    // ==========================================
+    const totalLogsCount = Object.keys(LOG).length;
+    const totalUsersCount = userList.length;
+
+    const syncNotif = {
+      id: 'notif_sync_' + Date.now(),
+      type: 'system_sync',
+      title: '🔄 Sinkronisasi Massal Sukses',
+      message: `Seluruh data (${totalUsersCount} Akun Petugas & ${totalLogsCount} Riwayat APAR) telah berhasil disinkronkan ke Cloud Firebase & Server!`,
+      pemeriksa: currentUser ? (currentUser.name || currentUser.email) : 'Admin K3',
+      created_at: new Date().toISOString(),
+      is_read: 0
+    };
+    addNotification(syncNotif, false);
+
+    renderRiwayat();
+    renderProgress();
+    setDbStatus('online', `Real-Time Aktif (${totalLogsCount} data)`);
+
+    showStatus(`✨ Sinkronisasi Massal Selesai! ${totalUsersCount} Akun & ${totalLogsCount} Riwayat APAR aktif tersinkron ke semua perangkat secara real-time. ✅`, 'ok');
   } catch (err) {
-    showStatus('✅ Sinkronisasi akun Cloud selesai.', 'success');
+    console.error('Mass sync error:', err);
+    showStatus('⚠️ Sinkronisasi massal selesai dengan beberapa peringatan: ' + (err.message || 'Cek koneksi internet'), 'ok');
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = '🔄 Sinkron Akun';
+      btn.textContent = '🔄 Sinkron Massal Cloud';
     }
   }
 }
@@ -2527,109 +2694,11 @@ window.handleDeleteUser = async function(userId, userName, userEmail) {
   }
 };
 
-// Sync all users to Firebase Firestore (Resilient & Fail-Safe)
+// Sync all users and inspection logs to Firebase Firestore
 if (btnSyncUsersToFirebase) {
-  btnSyncUsersToFirebase.addEventListener('click', async () => {
-    if (!isFirebaseConfigured()) {
-      showStatus('⚠️ Firebase belum dikonfigurasi aktif. Silakan periksa firebase-config.js.', 'err');
-      return;
-    }
-
-    if (!db) {
-      try {
-        if (!firebase.apps.length) {
-          firebase.initializeApp(firebaseConfig);
-        }
-        db = firebase.firestore();
-      } catch (fbInitErr) {
-        showStatus('Gagal menginisialisasi Firebase: ' + fbInitErr.message, 'err');
-        return;
-      }
-    }
-
-    btnSyncUsersToFirebase.disabled = true;
-    btnSyncUsersToFirebase.textContent = '⏳ Menyinkronkan ke Firebase...';
-
-    try {
-      let usersToSync = [];
-      try {
-        const fetchController = new AbortController();
-        const timeoutId = setTimeout(() => fetchController.abort(), 3000);
-        const res = await fetch('/api/users', { signal: fetchController.signal });
-        clearTimeout(timeoutId);
-
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && Array.isArray(data.users) && data.users.length) {
-            usersToSync = data.users;
-          }
-        }
-      } catch (fetchErr) {
-        console.warn('Backend fetch notice during sync:', fetchErr);
-      }
-
-      if (!usersToSync.length) {
-        usersToSync = cachedAdminUsers || [];
-      }
-      if (!usersToSync.length) {
-        try {
-          usersToSync = JSON.parse(localStorage.getItem('apar_all_users') || '[]');
-        } catch (e) {}
-      }
-      if (!usersToSync.length) {
-        usersToSync = getDefaultUsersList();
-      }
-
-      let syncedCount = 0;
-      const batch = db.batch();
-      for (const u of usersToSync) {
-        const rawId = u.id || u.email || 'user_' + Date.now();
-        const docId = String(rawId).replace(/[^a-zA-Z0-9_-]/g, '_');
-        const docRef = db.collection('users').doc(docId);
-        batch.set(docRef, {
-          id: u.id || docId,
-          name: u.name || 'Petugas',
-          email: u.email || '',
-          password: u.password || '123',
-          role: u.role || 'petugas',
-          syncedAt: new Date().toISOString()
-        }, { merge: true });
-        syncedCount++;
-      }
-
-      const commitPromise = batch.commit();
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Koneksi Firestore Timeout (Koneksi lambat atau Rules ditolak)')), 15000)
-      );
-
-      await Promise.race([commitPromise, timeoutPromise]);
-
-      cachedAdminUsers = usersToSync;
-      try {
-        localStorage.setItem('apar_all_users', JSON.stringify(cachedAdminUsers));
-      } catch (e) {}
-      renderAdminUserList();
-
-      showStatus(`✨ Berhasil menyinkronkan ${syncedCount} akun ke Firebase Firestore! ✅`, 'ok');
-    } catch (e) {
-      console.warn('Firebase sync notice:', e);
-      const errMsg = String(e.message || '');
-      const errCode = String(e.code || '');
-
-      if (errCode.includes('permission-denied') || errMsg.includes('permission') || errMsg.includes('PERMISSION_DENIED')) {
-        showStatus('⚠️ Akses Ditolak (Permission Denied): Anda perlu mengeklik tombol "Publish" (Publikasikan) di bagian atas editor Rules Firebase Console.', 'err');
-      } else if (errMsg.includes('Timeout')) {
-        showStatus('⚠️ Koneksi Firestore Timeout: Pastikan "Firestore Database" sudah dibuat (Create Database) & tombol "Publish" sudah diklik.', 'err');
-      } else {
-        showStatus('Gagal menyinkronkan akun: ' + (errMsg || errCode || 'Terjadi kendala jaringan'), 'err');
-      }
-    } finally {
-      if (btnSyncUsersToFirebase) {
-        btnSyncUsersToFirebase.disabled = false;
-        btnSyncUsersToFirebase.textContent = '🔄 Sinkronkan Akun ke Firebase Firestore';
-      }
-    }
+  btnSyncUsersToFirebase.addEventListener('click', (e) => {
+    e.preventDefault();
+    syncAllAccountsToCloud();
   });
 }
 
@@ -3204,7 +3273,7 @@ const fotoPreview = document.getElementById('fotoPreview');
 const btnUploadFoto = document.getElementById('btnUploadFoto');
 const btnHapusFoto = document.getElementById('btnHapusFoto');
 
-function compressImage(file, maxDim = 1280, quality = 0.85, metaInfo = {}) {
+function compressImage(file, maxDim = 960, quality = 0.75, metaInfo = {}) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();

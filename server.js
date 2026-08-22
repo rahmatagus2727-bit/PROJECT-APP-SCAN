@@ -996,6 +996,15 @@ app.delete('/api/notifications', (req, res) => {
   res.json({ success: true, message: 'Semua log notifikasi telah dibersihkan.' });
 });
 
+app.post('/api/notifications', (req, res) => {
+  const notif = req.body;
+  if (!notif) {
+    return res.status(400).json({ success: false, message: 'Data notifikasi kosong.' });
+  }
+  const created = addNotificationToSqlite(notif);
+  return res.json({ success: true, notification: created });
+});
+
 // -------------------------------------------------------------
 // REST API Endpoints for SQLite Database
 // -------------------------------------------------------------
@@ -1007,6 +1016,32 @@ app.get('/api/apar_log', (req, res) => {
     count: Object.keys(logs).length,
     logs: logs
   });
+});
+
+app.post('/api/apar_log/bulk', (req, res) => {
+  const { logs } = req.body || {};
+  if (!logs || typeof logs !== 'object') {
+    return res.status(400).json({ success: false, message: 'Data log inspeksi massal tidak valid.' });
+  }
+
+  let count = 0;
+  for (const k in logs) {
+    const entry = logs[k];
+    if (entry && (entry.kode || entry.id)) {
+      upsertInspectionInSqlite(entry);
+      count++;
+    }
+  }
+
+  const allLogs = getAllInspectionsFromSqlite();
+  broadcastUpdate({
+    type: 'init',
+    logs: allLogs,
+    totalLogs: Object.keys(allLogs).length,
+    timestamp: Date.now()
+  });
+
+  return res.json({ success: true, message: `Berhasil menyinkronkan ${count} data inspeksi ke server SQLite.`, total: Object.keys(allLogs).length });
 });
 
 app.post('/api/apar_log', (req, res) => {

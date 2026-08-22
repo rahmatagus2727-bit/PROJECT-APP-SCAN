@@ -10,5 +10,11 @@
     "nozzle": "Lengkap & Bersih",
     "tagLabel": "Ada & Terisi",
     "pemeriksa": "Petugas Tes"
+  },
+  "APAR-TEST": {
+    "id": "APAR-TEST",
+    "kode": "APAR-TEST",
+    "petugas": "Tester",
+    "kondisi": "Baik"
   }
 }
